@@ -15,7 +15,10 @@ exec ros -Q -- $0 "$@"
 
 ;;; Variables
 ;; Must ends with / (in CL it's dir!)
-(defvar *tags-dir* (uiop:native-namestring #p"~/.tags/"))
+(defvar *tags-dir*
+  (uiop:native-namestring
+   (merge-pathnames ".tags/" (user-homedir-pathname))))
+
 
 ;; Current OS
 (defvar *OS* (cond ((member :windows *features*) :windows)
@@ -227,7 +230,7 @@ exec ros -Q -- $0 "$@"
          (tag-dirs (clingon:getopt cmd :tag-dirs)))
     (cond
       (tag-dirs (loop :for d :in (uiop:subdirectories *tags-dir*)
-                      :for dname = (car (last (pathname-directory d)))
+                      :for dname = (last-path-component d)
                       :do (format t "~A~%" dname)))
       (user (loop :for d :in (uiop:subdirectories *tags-dir*)
                   :do (loop :for line :in (uiop:read-file-lines (merge-pathnames d "tags"))
@@ -236,6 +239,32 @@ exec ros -Q -- $0 "$@"
       (t (loop :for d :in (uiop:subdirectories *tags-dir*)
                :do (loop :for line :in (uiop:read-file-lines (merge-pathnames d "tags"))
                          :do (format t "~A~%" line)))))))
+
+(defun cli-autocomplete-cmd-handler (cmd)
+  (format t "
+function _easytags_auto_complete()
+{
+  latest=\"${COMP_WORDS[$COMP_CWORD]}\"
+  prev=\"${COMP_WORDS[$COMP_CWORD - 1]}\"
+  words=\"\"
+  case \"${prev}\" in
+    easytags.ros|easytags)
+      words=\"tag tags tagged autocomplete\"
+      ;;
+    tag)
+      words=`/bin/ls`
+      ;;
+    tagged)
+      words=
+      ;;
+    *)
+      ;;
+  esac
+  COMPREPLY=($(compgen -W \"$words\" -- $latest))
+  return 0
+}
+complete -F _foo foo")
+  )
 
 
 (defun cli-tagged-cmd-opts ()

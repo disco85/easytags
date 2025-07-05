@@ -35,6 +35,9 @@ exec ros -Q -- $0 "$@"
 
 (defconstant +outfmt-color+ '(:report t :grep t :emacs nil :xcons t :cd t :eval nil))
 
+;; Supported shells autocomplete
+(defconstant +ac-shell+ '(:bash :zsh))
+
 ;; How to output matched part of a tag
 (defconstant +matched-ansi-attrs+ '(:fg :red :bold t))
 
@@ -255,7 +258,9 @@ exec ros -Q -- $0 "$@"
 
 
 (defun cli-autocomplete-cmd-handler (cmd)
-  (format t (replace-all '(("<SCRIPT-NAME>" "XXX") ("<SCRIPT-PATH>" "XXX"))
+  (let ((argv (clingon.command::command-context cmd)))
+    (format t "~A !!!!!!!!~%" (clingon.command::command-context cmd))
+    (format t (replace-all '(("<SCRIPT-NAME>" (last-path-component argv)) ("<SCRIPT-PATH>" (car argv)))
 "
 function _easytags_auto_complete()
 {
@@ -263,7 +268,7 @@ function _easytags_auto_complete()
   prev=\"${COMP_WORDS[$COMP_CWORD - 1]}\"
   words=\"\"
   case \"${prev}\" in
-    easytags.ros|easytags)
+    <SCRIPT-NAME>)
       words=\"tag tags tagged autocomplete\"
       ;;
     tag)
@@ -278,7 +283,7 @@ function _easytags_auto_complete()
   COMPREPLY=($(compgen -W \"$words\" -- $latest))
   return 0
 }
-complete -F _foo foo"))
+complete -F _foo foo")))
   )
 
 
@@ -316,6 +321,18 @@ complete -F _foo foo"))
     :short-name #\t
     :long-name "tag-dirs"
     :key :tag-dirs)))
+
+
+(defun cli-autocomplete-cmd-opts ()
+  (list
+   (clingon:make-option
+    :choice
+    :description "Shells for autocomplete"
+    :short-name #\s
+    :long-name "shell"
+    :key :shell
+    :initial-value :bash
+    :items +ac-shell+)))
 
 
 (defun cli-tag-cmd ()
@@ -362,19 +379,30 @@ complete -F _foo foo"))
    :options (cli-tags-cmd-opts)))
 
 
-(defun cli-main-cmd ()
+(defun cli-autocomplete-cmd ()
+  (clingon:make-command
+   :name "autocomplete"
+   :usage (format nil "[-s ~{~A~^,~}]" +ac-shell+)
+   :examples '(("Inject autocomplete code in BASH shell" . "eval $(SCRIPT autocomplete -s BASH)"))
+   :description "Inject autocomplete code into the current shell"
+   :handler #'cli-autocomplete-cmd-handler
+   :options (cli-autocomplete-cmd-opts)))
+
+
+(defun cli-main-cmd (argv)
   (clingon:make-command
    :name "tags"
    :description "Tags over file objects"
    :version "0.1.0"
    :authors '("John Doe <john.doe@example.org")
    :license "BSD 2-Clause"
-   :sub-commands (list (cli-tag-cmd) (cli-tagged-cmd) (cli-tags-cmd))
-   :handler (lambda (cmd) (declare (ignore cmd)))))
+   :sub-commands (list (cli-tag-cmd) (cli-tagged-cmd) (cli-tags-cmd) (cli-autocomplete-cmd))
+   :handler (lambda (cmd) (declare (ignore cmd)))
+   :context argv))
 
 
 ;;; MAIN
 (defun main (&rest argv)
-  (clingon:run (cli-main-cmd) argv))
+  (clingon:run (cli-main-cmd argv) argv))
 
 ;;; vim: set ft=lisp lisp:

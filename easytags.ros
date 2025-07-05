@@ -224,11 +224,11 @@ exec ros -Q -- $0 "$@"
 
 (defun cli-tags-cmd-handler (cmd)
   (let* ((user (clingon:getopt cmd :user))
-         (tag-files (clingon:getopt cmd :tag-files)))
+         (tag-dirs (clingon:getopt cmd :tag-dirs)))
     (cond
-      (tag-files (loop :for d :in (uiop:subdirectories *tags-dir*)
-                       ;; :for dname = (car (last (pathname-directory d)))
-                       :do (format t "~A~%" (merge-pathnames d "tags"))))
+      (tag-dirs (loop :for d :in (uiop:subdirectories *tags-dir*)
+                      :for dname = (car (last (pathname-directory d)))
+                      :do (format t "~A~%" dname)))
       (user (loop :for d :in (uiop:subdirectories *tags-dir*)
                   :do (loop :for line :in (uiop:read-file-lines (merge-pathnames d "tags"))
                             :when (ppcre:scan "^user!" line)
@@ -268,10 +268,10 @@ exec ros -Q -- $0 "$@"
     :key :user)
    (clingon:make-option
     :flag
-    :description "Print tag files"
+    :description "Print tags directories"
     :short-name #\t
-    :long-name "tag-files"
-    :key :tag-files)))
+    :long-name "tag-dirs"
+    :key :tag-dirs)))
 
 
 (defun cli-tag-cmd ()
@@ -312,7 +312,7 @@ exec ros -Q -- $0 "$@"
    :usage "[-s,-u]"
    :examples '(("List all known tags:" . "tags")
                ("List all user tags:" . "tags -u")
-               ("List all tag files:" . "tags -t"))
+               ("List all tag directories:" . "tags -t"))
    :description "List tags"
    :handler #'cli-tags-cmd-handler
    :options (cli-tags-cmd-opts)))

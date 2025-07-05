@@ -66,7 +66,7 @@ exec ros -Q -- $0 "$@"
   (let* ((name (last-path-component path))
          (abs-path (truename path))
          (uniq-part (format nil "~X" (sxhash abs-path)))
-         (tag-dirname (format nil "~A-~A/" name uniq-part))
+         (tag-dirname (format nil "~A-~A/" name uniq-part))  ;; FIXME not portable /
          (tag-dir (merge-pathnames tag-dirname *tags-dir*))
          (tags-file (merge-pathnames #p"tags" tag-dir))
          (link-file (merge-pathnames #p"link" tag-dir))
@@ -137,7 +137,20 @@ exec ros -Q -- $0 "$@"
 
 (defun maybe-dir-p (p)
   "Checks if path `p` is a directory. Does not work on Mac and maybe on Windows"
-  (probe-file (concatenate 'string (namestring p) "/.")))
+  (probe-file (concatenate 'string (namestring p) "/.")))  ;; FIXME not portable /
+
+
+(defun replace-all (repl-pairs in-str)
+  "Replaces in-str all pairs like '((from to) (from to) ...)"
+  (reduce (lambda (s pair)
+            (ppcre:regex-replace (car pair) s (cdr pair)))
+          repl-pairs
+          :initial-value in-str))
+;; (defun repl (repl-pairs in-str)
+;;   (loop :with s = in-str
+;;         :for (this . by-this) :in repl-pairs
+;;         :do (setf s (ppcre:regex-replace this s by-this))
+;;         :finally (return s)))
 
 
 (defun report-tags (found-tag-files outfmt all-tags-selected colorless)
@@ -240,8 +253,10 @@ exec ros -Q -- $0 "$@"
                :do (loop :for line :in (uiop:read-file-lines (merge-pathnames d "tags"))
                          :do (format t "~A~%" line)))))))
 
+
 (defun cli-autocomplete-cmd-handler (cmd)
-  (format t "
+  (format t (replace-all '(("<SCRIPT-NAME>" "XXX") ("<SCRIPT-PATH>" "XXX"))
+"
 function _easytags_auto_complete()
 {
   latest=\"${COMP_WORDS[$COMP_CWORD]}\"
@@ -263,7 +278,7 @@ function _easytags_auto_complete()
   COMPREPLY=($(compgen -W \"$words\" -- $latest))
   return 0
 }
-complete -F _foo foo")
+complete -F _foo foo"))
   )
 
 

@@ -24,6 +24,9 @@ exec ros -Q -- $0 "$@"
                           (t :unix)))
                    (t (error "OS not recognized!"))))
 
+;; Path separator (as a string)
+(defvar *path-sep* (ecase *OS* (:windows "\\") (:unix "/") (:mac "/")))
+
 ;; Supported output formats
 (defconstant +outfmt+ '(:report :grep :emacs :xcons :cd :eval))
 
@@ -171,7 +174,7 @@ exec ros -Q -- $0 "$@"
   "Finds a tagged object by tag regular expression"
   (let* ((tag-rexpr-1 (or tag-rexpr ".*"))
          (all-tags-selected (null tag-rexpr))
-         (tag-files (loop :for d :in (uiop:subdirectories *tags-dir*) ;; TODO make lambda
+         (tag-files (loop :for d :in (uiop:subdirectories *tags-dir*)
                           :append (loop :for f :in (uiop:directory-files d)
                                         :when (select-tags-file (namestring f) file-rexpr)
                                           :collect f)))
@@ -221,13 +224,15 @@ exec ros -Q -- $0 "$@"
 
 (defun cli-tags-cmd-handler (cmd)
   (let* ((user (clingon:getopt cmd :user))
-         (tag-files (clingon:getopt cmd :tag-files))
-         (numbers (clingon:getopt cmd :numbers)))
+         (tag-files (clingon:getopt cmd :tag-files)))
     (cond
       (tag-files (loop :for d :in (uiop:subdirectories *tags-dir*)
-                       :for dname = (car (last (pathname-directory d)))
-                       :do (format t "~A~%" dname)))
-      (user (format t "user=~A~%" user))
+                       ;; :for dname = (car (last (pathname-directory d)))
+                       :do (format t "~A~%" (merge-pathnames d "tags"))))
+      (user (loop :for d :in (uiop:subdirectories *tags-dir*)
+                  :do (loop :for line :in (uiop:read-file-lines (merge-pathnames d "tags"))
+                             :when (ppcre:scan "^user!" line)
+                               :do (format t "~A~%" (subseq line (length "user!"))))))
       (t (print "all")))))
 
 
@@ -264,13 +269,7 @@ exec ros -Q -- $0 "$@"
     :description "Print tag files"
     :short-name #\t
     :long-name "tag-files"
-    :key :tag-files)
-   (clingon:make-option
-    :flag
-    :description "Print numbers of tags"
-    :short-name #\n
-    :long-name "numbers"
-    :key :numbers)))
+    :key :tag-files)))
 
 
 (defun cli-tag-cmd ()
@@ -281,7 +280,7 @@ exec ros -Q -- $0 "$@"
    :description "Tag file object"
    :handler #'cli-tag-cmd-handler))
 
-;; TODO -c 0 (suppress), -c 1 (force)
+
 (defun cli-tagged-cmd ()
   (clingon:make-command
    :name "tagged"
@@ -308,9 +307,10 @@ exec ros -Q -- $0 "$@"
 (defun cli-tags-cmd ()
   (clingon:make-command
    :name "tags"
-   :usage "[-s,-u] [-n]"
+   :usage "[-s,-u]"
    :examples '(("List all known tags:" . "tags")
-               ("List all user tags:" . "tags -u"))
+               ("List all user tags:" . "tags -u")
+               ("List all tag files:" . "tags -t"))
    :description "List tags"
    :handler #'cli-tags-cmd-handler
    :options (cli-tags-cmd-opts)))

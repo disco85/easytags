@@ -1,0 +1,334 @@
+#!/bin/sh
+#|-*- mode:lisp -*-|#
+#|
+exec ros -Q -- $0 "$@"
+|#
+(progn ;;init forms
+  (ros:ensure-asdf)
+  #+quicklisp(ql:quickload '(clingon cl-ppcre) :silent t)
+  )
+
+(defpackage :ros.script.tag.3954585820
+  (:use :cl))
+(in-package :ros.script.tag.3954585820)
+
+
+;;; Variables
+;; Must ends with / (in CL it's dir!)
+(defvar *tags-dir* (uiop:native-namestring #p"~/.tags/"))
+
+;; Current OS
+(defvar *OS* (cond ((member :windows *features*) :windows)
+                   ((member :unix *features*)
+                    (cond ((member :darwin *features*) :mac)
+                          (t :unix)))
+                   (t (error "OS not recognized!"))))
+
+;; Supported output formats
+(defconstant +outfmt+ '(:report :grep :emacs :xcons :cd :eval))
+
+(defconstant +outfmt-color+ '(:report t :grep t :emacs nil :xcons t :cd t :eval nil))
+
+;; How to output matched part of a tag
+(defconstant +matched-ansi-attrs+ '(:fg :red :bold t))
+
+;; How to output files of a matched tag
+(defconstant +file-ansi-attrs+ '(:fg :magenta))
+
+(defconstant +bool-enum-opt+ '(("y" . 1) ("n" . 0) ("yes" . 1) ("no" . 0)
+                               ("1" . 1) ("0" . 0) ("true" . 1) ("false" . 0)
+                               ("on" . 1) ("off" . 0) ("-" . 2)))
+
+;;; Utilities
+(defun last-path-component (path)
+  "Returns c for /a/b/c/ or /a/b/c"
+  (let ((pn (pathname path)))
+    (or (pathname-name pn)
+        (car (last (pathname-directory pn))))))
+
+
+(defun create-link (src-path link-path)
+  "Creates symbolic/soft link"
+  (ecase *OS*
+    (:windows (uiop:run-program `("mklink" "/D" ,link-path ,src-path))) ; BUG? /D for dirs
+    (:unix (uiop:run-program `("ln" "-s" ,src-path ,link-path)))
+    (:mac (uiop:run-program `("ln" "-s" ,src-path ,link-path)))))
+
+
+(defun tag-fs-object (path tags)
+  "Tags FS-object"
+  (let* ((name (last-path-component path))
+         (abs-path (truename path))
+         (uniq-part (format nil "~X" (sxhash abs-path)))
+         (tag-dirname (format nil "~A-~A/" name uniq-part))
+         (tag-dir (merge-pathnames tag-dirname *tags-dir*))
+         (tags-file (merge-pathnames #p"tags" tag-dir))
+         (link-file (merge-pathnames #p"link" tag-dir))
+         (new (nth-value 1 (ensure-directories-exist tag-dir))))
+    (when new
+      (with-open-file (f tags-file :direction :output)
+        (write-string (format nil "src!~A~%~{user!~A~%~}" abs-path tags) f))
+      (create-link (namestring abs-path) (namestring link-file))
+      (format t "Object ~A tagged in ~A~%" abs-path tags-file))))
+
+
+(defun is-color-term-available ()
+  (cond
+    ((not (interactive-stream-p *standard-output*)) nil)
+    ((not (equal *OS* :windows)) t)
+    (t nil)))
+
+
+(defun can-i-colorize (outfmt all-tags-selected &optional colorless)
+  (ecase colorless
+    (1 t)
+    (0 nil)
+    (2 (and (is-color-term-available) (getf +outfmt-color+ outfmt)
+            (not all-tags-selected)))))
+
+
+(defun ansi-color-code (color &optional bg)
+  "Returns ANSI color code for foreground or background if `bg` is set"
+  (let* ((pos (position color '(:black :red :green :yellow :blue :magenta :cyan :white)))
+         (code (when pos (if bg (+ pos 40) (+ pos 30)))))
+    code))
+
+
+(defun ansi-attr-code (attr-name)
+  (case attr-name
+    (:bold 1)
+    (:italic 3)
+    (:underline 4)
+    (:reverse 7)))
+
+
+(defun ansi-colorize (text &key fg bg bold italic underline reverse)
+  (let ((attrs (remove nil
+                       (list (ansi-color-code fg)
+                             (ansi-color-code bg t)
+                             (ansi-attr-code (when bold :bold))
+                             (ansi-attr-code (when italic :italic))
+                             (ansi-attr-code (when underline :underline))
+                             (ansi-attr-code (when reverse :reverse))))))
+    (format nil "~c[~{~A~^;~}m~A~c[0m" #\ESC attrs text #\ESC)))
+
+
+(defstruct (matched
+            (:print-object
+             (lambda (me stream)
+              (if (and (matched-colored me) (matched-outfmt me) (matched-beg me))
+                  (format stream "~A"
+                          (concatenate
+                           'string
+                           (subseq (matched-str me) 0 (matched-beg me))
+                           (apply #'ansi-colorize
+                                  (subseq (matched-str me) (matched-beg me) (matched-end me))
+                                  +matched-ansi-attrs+)
+                           (subseq (matched-str me) (or (matched-end me) (length (matched-str me))))))
+                  (format stream "~A" (matched-str me))))))
+  str beg end outfmt colored)
+
+
+(defun maybe-dir-p (p)
+  "Checks if path `p` is a directory. Does not work on Mac and maybe on Windows"
+  (probe-file (concatenate 'string (namestring p) "/.")))
+
+
+(defun report-tags (found-tag-files outfmt all-tags-selected colorless)
+  "Reports found tags by files (found-tag-files is [(file [matched] src-tag)])"
+  (ecase outfmt
+    (:report (format nil "~:{Tags: ~A~%~{~A~%~}~&SRC: ~A~%~%~}" found-tag-files))
+    (:eval (format nil "cd ~{~A~}~%" (last (car found-tag-files))))
+    (:cd (format nil "~:{Tags: ~A~%~{~A~%~}~&CD: cd ~A~%~%~}" found-tag-files))
+    (:grep (with-output-to-string (r)
+             (dolist (entry found-tag-files)
+               (destructuring-bind (file found-tags &optional nil) entry
+                 (dolist (found-tag found-tags)
+                   (format r "~A:~A~%"
+                           (if (can-i-colorize outfmt all-tags-selected colorless)
+                               (apply #'ansi-colorize file +file-ansi-attrs+)
+                               file)
+                           found-tag))))))
+    (:emacs
+     (let ((found-tag-files-with-dirflag
+             (mapcar (lambda (ftf) (destructuring-bind (file tags src) ftf
+                                     (declare (ignorable file tags))
+                                   `(,@ftf ,(if (maybe-dir-p src) "directory" "file"))))
+                     found-tag-files)))
+       (format
+        nil
+        "# -*- mode: org; -*-~%~:{[[~A][Tags file]]~%~{~A~%~}~&[[~A][SRC ~A]]~%~%~}"
+        found-tag-files-with-dirflag)))
+    (:xcons (format nil "~:{Tags: file://~A~%~{~A~%~}~&SRC: file://~A~%~%~}" found-tag-files))))
+
+
+(defun select-tags-file (file &optional file-rexpr)
+  "Selects tags-file inside tag directory"
+  (and (ppcre:scan "[/\]tags[/\]?$" file) (if file-rexpr (ppcre:scan file-rexpr file) t)))
+
+
+(defun find-tag (tag-rexpr outfmt colorless &optional file-rexpr)
+  "Finds a tagged object by tag regular expression"
+  (let* ((tag-rexpr-1 (or tag-rexpr ".*"))
+         (all-tags-selected (null tag-rexpr))
+         (tag-files (loop :for d :in (uiop:subdirectories *tags-dir*) ;; TODO make lambda
+                          :append (loop :for f :in (uiop:directory-files d)
+                                        :when (select-tags-file (namestring f) file-rexpr)
+                                          :collect f)))
+         (match-tags (lambda (tag-file &aux matched-tags src-tag)
+                       (setf
+                        matched-tags
+                        (loop :for line :in (uiop:read-file-lines tag-file)
+                              :for scanned = (multiple-value-list (ppcre:scan tag-rexpr-1 line))
+                              :for is-src-tag = (multiple-value-list (ppcre:scan "^src!" line))
+                              :when (car is-src-tag)
+                                :do (setf src-tag (subseq line (length "src!")))
+                              :when (car scanned)
+                                :append (list (make-matched :str line
+                                                            :beg (nth 0 scanned)
+                                                            :end (nth 1 scanned)
+                                                            :colored (can-i-colorize
+                                                                      outfmt
+                                                                      all-tags-selected colorless)
+                                                            :outfmt outfmt))))
+                       (list src-tag matched-tags)))
+         (found-tag-files (loop :for tf :in tag-files
+                                :for (src-tag matched-tags) = (funcall match-tags tf)
+                                :when matched-tags
+                                  :collect (list tf matched-tags src-tag)))
+         (out (report-tags found-tag-files outfmt all-tags-selected colorless)))
+    (princ out)))
+
+
+;;; CLI options
+(defun cli-kw-getopt (cmd key)
+  "Allows to get a choice/enum option as a symbol in :keyword package ready for eq/getf/..."
+  (intern (string-upcase (clingon:getopt cmd key)) :keyword))
+
+
+(defun cli-tag-cmd-handler (cmd)
+  (destructuring-bind (path &rest tags) (clingon:command-arguments cmd)
+    (tag-fs-object path tags)))
+
+
+(defun cli-tagged-cmd-handler (cmd)
+  (destructuring-bind (&optional tag-rexpr file-rexpr) (clingon:command-arguments cmd)
+    (let* ((outfmt (cli-kw-getopt cmd :outfmt))
+           (colorless (clingon:getopt cmd :colorless)))
+      (find-tag tag-rexpr outfmt colorless file-rexpr))
+    ))
+
+
+(defun cli-tags-cmd-handler (cmd)
+  (let* ((user (clingon:getopt cmd :user))
+         (tag-files (clingon:getopt cmd :tag-files))
+         (numbers (clingon:getopt cmd :numbers)))
+    (cond
+      (tag-files (loop :for d :in (uiop:subdirectories *tags-dir*)
+                       :for dname = (car (last (pathname-directory d)))
+                       :do (format t "~A~%" dname)))
+      (user (format t "user=~A~%" user))
+      (t (print "all")))))
+
+
+(defun cli-tagged-cmd-opts ()
+  (list
+   (clingon:make-option
+    :choice
+    :description "output report format"
+    :short-name #\o
+    :long-name "outfmt"
+    :key :outfmt
+    :initial-value :xcons
+    :items +outfmt+)
+   (clingon:make-option
+    :enum
+    :description "suppress/force color"
+    :short-name #\c
+    :initial-value "-"
+    :items +bool-enum-opt+
+    :long-name "colorless"
+    :key :colorless)))
+
+
+(defun cli-tags-cmd-opts ()
+  (list
+   (clingon:make-option
+    :flag
+    :description "Print only user tags"
+    :short-name #\u
+    :long-name "user"
+    :key :user)
+   (clingon:make-option
+    :flag
+    :description "Print tag files"
+    :short-name #\t
+    :long-name "tag-files"
+    :key :tag-files)
+   (clingon:make-option
+    :flag
+    :description "Print numbers of tags"
+    :short-name #\n
+    :long-name "numbers"
+    :key :numbers)))
+
+
+(defun cli-tag-cmd ()
+  (clingon:make-command
+   :name "tag"
+   :usage "tag file,directory tag1 [tag...]"
+   :examples '(("Tag a file:" . "tag some-file tag1 tag2 tag3"))
+   :description "Tag file object"
+   :handler #'cli-tag-cmd-handler))
+
+;; TODO -c 0 (suppress), -c 1 (force)
+(defun cli-tagged-cmd ()
+  (clingon:make-command
+   :name "tagged"
+   :usage "tagged [tag-regexp] [tag-file-regexp] [-o REPORT,GREP,EMACS,XCONS,CD,EVAL] [-c 1,0]"
+   :examples '(("List all tagged objects:" . "tagged")
+               ("List by tag's regexp:" . "tagged 'tag[1-9]+'")
+               ("List by specific tag's regexp:" . "tagged 'user!tag[1-9]+'")
+               ("List by tag's regexp and tag-file's regexp:" . "tagged 'tag[1-9]+' 'somefile[0-9]+'")
+               ("List with standard report:" . "tagged mytag -o REPORT")
+               ("List with grep-like report:" . "tagged mytag -o GREP")
+               ("List with grep-like report to Vim:" . "tagged mytag -o GREP|vim -")
+               ("List with Emacs org-mode report in ZSH:" . "emacs =(SCRIPT tagged mytag -o GREP)")
+               ("List with X console report supporting URL click:" . "tagged mytag -o XCONS")
+               ("List with cd-commands report (copy-paste, execute):" . "tagged mytag -o CD")
+               ("List with Shell-eval report changing directory to the first source:" .
+                "eval $(SCRIPT tagged mytag -o EVAL)")
+               ("List suppressing color:" . "tagged mytag -c 0")
+               ("List forcing color:" . "tagged mytag -c 1"))
+   :description "Find tagged objects filtering them by regexps of tags, tag-file's full path"
+   :handler #'cli-tagged-cmd-handler
+   :options (cli-tagged-cmd-opts)))
+
+
+(defun cli-tags-cmd ()
+  (clingon:make-command
+   :name "tags"
+   :usage "[-s,-u] [-n]"
+   :examples '(("List all known tags:" . "tags")
+               ("List all user tags:" . "tags -u"))
+   :description "List tags"
+   :handler #'cli-tags-cmd-handler
+   :options (cli-tags-cmd-opts)))
+
+
+(defun cli-main-cmd ()
+  (clingon:make-command
+   :name "tags"
+   :description "Tags over file objects"
+   :version "0.1.0"
+   :authors '("John Doe <john.doe@example.org")
+   :license "BSD 2-Clause"
+   :sub-commands (list (cli-tag-cmd) (cli-tagged-cmd) (cli-tags-cmd))
+   :handler (lambda (cmd) (declare (ignore cmd)))))
+
+
+;;; MAIN
+(defun main (&rest argv)
+  (clingon:run (cli-main-cmd) argv))
+
+;;; vim: set ft=lisp lisp:

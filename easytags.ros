@@ -231,9 +231,11 @@ exec ros -Q -- $0 "$@"
                        :do (format t "~A~%" (merge-pathnames d "tags"))))
       (user (loop :for d :in (uiop:subdirectories *tags-dir*)
                   :do (loop :for line :in (uiop:read-file-lines (merge-pathnames d "tags"))
-                             :when (ppcre:scan "^user!" line)
-                               :do (format t "~A~%" (subseq line (length "user!"))))))
-      (t (print "all")))))
+                            :when (ppcre:scan "^user!" line)
+                              :do (format t "~A~%" (subseq line (length "user!"))))))
+      (t (loop :for d :in (uiop:subdirectories *tags-dir*)
+               :do (loop :for line :in (uiop:read-file-lines (merge-pathnames d "tags"))
+                         :do (format t "~A~%" line)))))))
 
 
 (defun cli-tagged-cmd-opts ()

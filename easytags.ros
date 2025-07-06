@@ -1,7 +1,7 @@
 #!/bin/sh
 #|-*- mode:lisp -*-|#
 #|
-exec ros -Q -- $0 "$@"
+exec ros -Q -- $0 $0 $@
 |#
 (progn ;;init forms
   (ros:ensure-asdf)
@@ -257,10 +257,9 @@ exec ros -Q -- $0 "$@"
                          :do (format t "~A~%" line)))))))
 
 
-(defun cli-autocomplete-cmd-handler (cmd)
-  (let ((argv (clingon.command::command-context cmd)))
-    (format t "~A !!!!!!!!~%" (clingon.command::command-context cmd))
-    (format t (replace-all '(("<SCRIPT-NAME>" (last-path-component argv)) ("<SCRIPT-PATH>" (car argv)))
+(defun cli-autocomplete-cmd-handler (argv0 cmd)
+    (format t "~A !!!!!!!!~%" argv0)
+    (format t (replace-all `(("<SCRIPT-NAME>" . ,argv0) ("<SCRIPT-PATH>" . ,argv0))
 "
 function _easytags_auto_complete()
 {
@@ -284,7 +283,7 @@ function _easytags_auto_complete()
   return 0
 }
 complete -F _foo foo")))
-  )
+
 
 
 (defun cli-tagged-cmd-opts ()
@@ -379,30 +378,58 @@ complete -F _foo foo")))
    :options (cli-tags-cmd-opts)))
 
 
-(defun cli-autocomplete-cmd ()
+(defun cli-autocomplete-cmd (argv0)
   (clingon:make-command
    :name "autocomplete"
    :usage (format nil "[-s ~{~A~^,~}]" +ac-shell+)
    :examples '(("Inject autocomplete code in BASH shell" . "eval $(SCRIPT autocomplete -s BASH)"))
    :description "Inject autocomplete code into the current shell"
-   :handler #'cli-autocomplete-cmd-handler
+   :handler (lambda (cmd) (cli-autocomplete-cmd-handler argv0 cmd))
    :options (cli-autocomplete-cmd-opts)))
 
 
-(defun cli-main-cmd (argv)
+(defun cli-main-cmd (argv0)
   (clingon:make-command
    :name "tags"
    :description "Tags over file objects"
    :version "0.1.0"
    :authors '("John Doe <john.doe@example.org")
    :license "BSD 2-Clause"
-   :sub-commands (list (cli-tag-cmd) (cli-tagged-cmd) (cli-tags-cmd) (cli-autocomplete-cmd))
-   :handler (lambda (cmd) (declare (ignore cmd)))
-   :context argv))
+   :sub-commands (list (cli-tag-cmd) (cli-tagged-cmd) (cli-tags-cmd) (cli-autocomplete-cmd argv0))
+   :handler (lambda (cmd) (declare (ignore cmd)))))
 
+(defun full-argv ()
+  (or
+   #+sbcl sb-ext:*posix-argv*
+   #+clisp ext:*args*
+   #+cmu extensions:*command-line-words*
+   #+allegro (sys:command-line-arguments)
+   #+lispworks system:*line-arguments-list*
+   nil))
+
+;; Real exe:
+;; ========
+;; FMT = ("tagged" "java" "-o" "GREP") !!!! ("/home/nothome/prj/shared/easytag/easytags" "tagged" "java" "-o" "GREP")
+
+;; Script:
+;; =======
+;; FMT = ("./easytags.ros" "tagged" "java" "-o" "GREP") !!!! ("/home/nothome/.roswell/impls/x86-64/linux/sbcl-bin/2.0.4/bin/sbcl")
+(defun process-argv (argv)
+  (let* ((fargv (full-argv))
+         (buf (make-string 3))
+         (arg0-file-header (handler-case ;; if we cannot read, return fake 3 item string
+                            (with-open-file (strm (car argv) :direction :input)
+                              (and (read-sequence buf strm) buf))
+                             (error () (make-string 3)))))
+    (cond ((string= "#!/" (subseq arg0-file-header 0 3)) (list :script (car argv)))
+          (t (list :binary (car fargv))))))
 
 ;;; MAIN
 (defun main (&rest argv)
-  (clingon:run (cli-main-cmd argv) argv))
+  (let* ((qual-argv-0 (process-argv argv))
+         (fixed-argv (ecase (car qual-argv-0)
+                       (:script (rest argv))
+                       (:binary argv))))
+    (clingon:run (cli-main-cmd (nth 1 qual-argv-0)) fixed-argv)))
 
 ;;; vim: set ft=lisp lisp:

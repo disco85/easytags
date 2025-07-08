@@ -144,9 +144,9 @@ exec ros -Q -- $0 $0 $@
 
 
 (defun replace-all (repl-pairs in-str)
-  "Replaces in-str all pairs like '((from to) (from to) ...)"
+  "Replaces in-str all pairs like '((from . to) (from . to) ...)"
   (reduce (lambda (s pair)
-            (ppcre:regex-replace (car pair) s (cdr pair)))
+            (ppcre:regex-replace-all (car pair) s (cdr pair)))
           repl-pairs
           :initial-value in-str))
 ;; (defun repl (repl-pairs in-str)
@@ -154,6 +154,13 @@ exec ros -Q -- $0 $0 $@
 ;;         :for (this . by-this) :in repl-pairs
 ;;         :do (setf s (ppcre:regex-replace this s by-this))
 ;;         :finally (return s)))
+
+(defun insert-or-combine (ht key new-value &key combine)
+  (let ((old-value (gethash key ht nil)))
+    (setf (gethash key ht)
+          (if old-value
+              (funcall (or combine (constantly new-value)) old-value new-value)
+              new-value))))
 
 
 (defun report-tags (found-tag-files outfmt all-tags-selected colorless)
@@ -243,23 +250,31 @@ exec ros -Q -- $0 $0 $@
 
 (defun cli-tags-cmd-handler (cmd)
   (let* ((user (clingon:getopt cmd :user))
-         (tag-dirs (clingon:getopt cmd :tag-dirs)))
-    (cond
+         (tag-dirs (clingon:getopt cmd :tag-dirs))
+         (counters (clingon:getopt cmd :counters))
+         (format-tag (if counters
+                         (lambda (tag cnt) (format t "~A(~A)~%" tag cnt))
+                         (lambda (tag cnt) (declare (ignorable cnt)) (format t "~A~%" tag)))))
+    (cond  ;; FIXME not unique !!!
       (tag-dirs (loop :for d :in (uiop:subdirectories *tags-dir*)
                       :for dname = (last-path-component d)
                       :do (format t "~A~%" dname)))
-      (user (loop :for d :in (uiop:subdirectories *tags-dir*)
-                  :do (loop :for line :in (uiop:read-file-lines (merge-pathnames d "tags"))
-                            :when (ppcre:scan "^user!" line)
-                              :do (format t "~A~%" (subseq line (length "user!"))))))
+      (user (let* ((users-ht (make-hash-table :test 'equal)))
+              (loop :for d :in (uiop:subdirectories *tags-dir*)
+                    :do (loop :for line :in (uiop:read-file-lines (merge-pathnames d "tags"))
+                              :when (ppcre:scan "^user!" line)
+                                :do (insert-or-combine users-ht (subseq line (length "user!")) 1
+                                                       :combine #'+)))
+              (maphash format-tag users-ht)))
       (t (loop :for d :in (uiop:subdirectories *tags-dir*)
                :do (loop :for line :in (uiop:read-file-lines (merge-pathnames d "tags"))
                          :do (format t "~A~%" line)))))))
 
 
 (defun cli-autocomplete-cmd-handler (argv0 cmd)
-    (format t "~A !!!!!!!!~%" argv0)
-    (format t (replace-all `(("<SCRIPT-NAME>" . ,argv0) ("<SCRIPT-PATH>" . ,argv0))
+  (declare (ignorable cmd))
+  ;; (format t "~A !!!!!!!!~%" argv0)
+  (format t (replace-all `(("<SCRIPT-NAME>" . ,argv0) ("<SCRIPT-PATH>" . ,argv0))
 "
 function _easytags_auto_complete()
 {
@@ -267,14 +282,14 @@ function _easytags_auto_complete()
   prev=\"${COMP_WORDS[$COMP_CWORD - 1]}\"
   words=\"\"
   case \"${prev}\" in
-    <SCRIPT-NAME>)
+    <SCRIPT-PATH>)
       words=\"tag tags tagged autocomplete\"
       ;;
     tag)
       words=`/bin/ls`
       ;;
     tagged)
-      words=
+      words=`<SCRIPT-PATH> tags -u`
       ;;
     *)
       ;;
@@ -282,7 +297,8 @@ function _easytags_auto_complete()
   COMPREPLY=($(compgen -W \"$words\" -- $latest))
   return 0
 }
-complete -F _foo foo")))
+complete -F _easytags_auto_complete <SCRIPT-PATH>
+")))
 
 
 
@@ -319,7 +335,13 @@ complete -F _foo foo")))
     :description "Print tags directories"
     :short-name #\t
     :long-name "tag-dirs"
-    :key :tag-dirs)))
+    :key :tag-dirs)
+   (clingon:make-option
+    :flag
+    :description "Counters of tags"
+    :short-name #\c
+    :long-name "counters"
+    :key :counters)))
 
 
 (defun cli-autocomplete-cmd-opts ()
@@ -426,10 +448,10 @@ complete -F _foo foo")))
 
 ;;; MAIN
 (defun main (&rest argv)
-  (let* ((qual-argv-0 (process-argv argv))
-         (fixed-argv (ecase (car qual-argv-0)
+  (let* ((qual-argv (process-argv argv))
+         (fixed-argv (ecase (car qual-argv)
                        (:script (rest argv))
                        (:binary argv))))
-    (clingon:run (cli-main-cmd (nth 1 qual-argv-0)) fixed-argv)))
+    (clingon:run (cli-main-cmd (nth 1 qual-argv)) fixed-argv)))
 
 ;;; vim: set ft=lisp lisp:

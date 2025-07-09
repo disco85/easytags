@@ -255,20 +255,22 @@ exec ros -Q -- $0 $0 $@
          (format-tag (if counters
                          (lambda (tag cnt) (format t "~A(~A)~%" tag cnt))
                          (lambda (tag cnt) (declare (ignorable cnt)) (format t "~A~%" tag)))))
-    (cond  ;; FIXME not unique !!!
+    (cond
       (tag-dirs (loop :for d :in (uiop:subdirectories *tags-dir*)
                       :for dname = (last-path-component d)
                       :do (format t "~A~%" dname)))
-      (user (let* ((users-ht (make-hash-table :test 'equal)))
+      (user (let ((user-tags-ht (make-hash-table :test 'equal)))
               (loop :for d :in (uiop:subdirectories *tags-dir*)
                     :do (loop :for line :in (uiop:read-file-lines (merge-pathnames d "tags"))
                               :when (ppcre:scan "^user!" line)
-                                :do (insert-or-combine users-ht (subseq line (length "user!")) 1
+                                :do (insert-or-combine user-tags-ht (subseq line (length "user!")) 1
                                                        :combine #'+)))
-              (maphash format-tag users-ht)))
-      (t (loop :for d :in (uiop:subdirectories *tags-dir*)
-               :do (loop :for line :in (uiop:read-file-lines (merge-pathnames d "tags"))
-                         :do (format t "~A~%" line)))))))
+              (maphash format-tag user-tags-ht)))
+      (t (let ((all-tags-ht (make-hash-table :test 'equal)))
+           (loop :for d :in (uiop:subdirectories *tags-dir*)
+                 :do (loop :for line :in (uiop:read-file-lines (merge-pathnames d "tags"))
+                           :do (insert-or-combine all-tags-ht line 1 :combine #'+)))
+           (maphash format-tag all-tags-ht))))))
 
 
 (defun cli-autocomplete-cmd-handler (argv0 cmd)

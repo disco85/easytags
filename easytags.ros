@@ -163,32 +163,29 @@ exec ros -Q -- $0 $0 $@
               new-value))))
 
 
-(defun report-tags (found-tag-files outfmt all-tags-selected colorless)
-  "Reports found tags by files (found-tag-files is [(file [matched] src-tag)])"
+(defun report-tags (found outfmt all-tags-selected colorless)
+  "Reports found tags for a tag file; `found` is (file [matched] src-tag)"
   (ecase outfmt
-    (:report (format nil "~:{Tags: ~A~%~{~A~%~}~&SRC: ~A~%~%~}" found-tag-files))
-    (:eval (format nil "cd ~{~A~}~%" (last (car found-tag-files))))
-    (:cd (format nil "~:{Tags: ~A~%~{~A~%~}~&CD: cd ~A~%~%~}" found-tag-files))
-    (:grep (with-output-to-string (r)
-             (dolist (entry found-tag-files)
-               (destructuring-bind (file found-tags &optional nil) entry
-                 (dolist (found-tag found-tags)
-                   (format r "~A:~A~%"
-                           (if (can-i-colorize outfmt all-tags-selected colorless)
-                               (apply #'ansi-colorize file +file-ansi-attrs+)
-                               file)
-                           found-tag))))))
+    (:report (apply #'format t "~A~%" found))
+    (:eval (format t "cd ~{~A~}~%" (last found))) ;; FIXME last !!!
+    (:cd (apply #'format t "Tags: ~A~%~{~A~%~}~&CD: cd ~A~%" found))  ;; FIXME the same
+    (:grep (destructuring-bind (file matched &optional nil) found
+               (dolist (matched-tag matched)
+                 (format t "~A:~A~%"
+                         (if (can-i-colorize outfmt all-tags-selected colorless)
+                             (apply #'ansi-colorize file +file-ansi-attrs+)
+                             file)
+                         matched-tag))))
     (:emacs
-     (let ((found-tag-files-with-dirflag
-             (mapcar (lambda (ftf) (destructuring-bind (file tags src) ftf
-                                     (declare (ignorable file tags))
-                                   `(,@ftf ,(if (maybe-dir-p src) "directory" "file"))))
-                     found-tag-files)))
-       (format
-        nil
-        "# -*- mode: org; -*-~%~:{[[~A][Tags file]]~%~{~A~%~}~&[[~A][SRC ~A]]~%~%~}"
-        found-tag-files-with-dirflag)))
-    (:xcons (format nil "~:{Tags: file://~A~%~{~A~%~}~&SRC: file://~A~%~%~}" found-tag-files))))
+     (let ((found-with-dirflag
+             (destructuring-bind (file matched src-tag) found
+               (declare (ignorable file matched))
+               `(,@found ,(if (maybe-dir-p src-tag) "directory" "file")))))
+       (apply #'format
+        t
+        "# -*- mode: org; -*-~%[[~A][Tags file]]~%~{~A~%~}~&[[~A][SRC ~A]]~%" ;; FIXME multiple headers
+        found-with-dirflag)))
+    (:xcons (apply #'format t "Tags: file://~A~%~{~A~%~}~&SRC: file://~A~%" found))))
 
 
 (defun select-tags-file (file &optional file-rexpr)
@@ -200,10 +197,11 @@ exec ros -Q -- $0 $0 $@
   "Finds a tagged object by tag regular expression"
   (let* ((tag-rexpr-1 (or tag-rexpr ".*"))
          (all-tags-selected (null tag-rexpr))
-         (tag-files (loop :for d :in (uiop:subdirectories *tags-dir*)
-                          :append (loop :for f :in (uiop:directory-files d)
-                                        :when (select-tags-file (namestring f) file-rexpr)
-                                          :collect f)))
+         (tagfiles-iter (lambda (on-tag-file)
+                          (loop :for d :in (uiop:subdirectories *tags-dir*)
+                                :do (loop :for tagfile :in (uiop:directory-files d)
+                                          :when (select-tags-file (namestring tagfile) file-rexpr)
+                                            :do (funcall on-tag-file tagfile)))))
          (match-tags (lambda (tag-file &aux matched-tags src-tag)
                        (setf
                         matched-tags
@@ -221,12 +219,11 @@ exec ros -Q -- $0 $0 $@
                                                                       all-tags-selected colorless)
                                                             :outfmt outfmt))))
                        (list src-tag matched-tags)))
-         (found-tag-files (loop :for tf :in tag-files
-                                :for (src-tag matched-tags) = (funcall match-tags tf)
-                                :when matched-tags
-                                  :collect (list tf matched-tags src-tag)))
-         (out (report-tags found-tag-files outfmt all-tags-selected colorless)))
-    (princ out)))
+         (on-tag-file (lambda (tagfile)
+                        (destructuring-bind (src-tag matched-tags) (funcall match-tags tagfile)
+                          (when matched-tags (report-tags (list tagfile matched-tags src-tag)
+                                                          outfmt all-tags-selected colorless))))))
+    (funcall tagfiles-iter on-tag-file)))
 
 
 ;;; CLI options

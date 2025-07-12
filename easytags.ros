@@ -167,7 +167,8 @@ exec ros -Q -- $0 $0 $@
 (defun report-tags (position found outfmt all-tags-selected colorless)
   "Reports found tags for a tag file; `found` is (file [matched] src-tag),
   `position` is :beg/:mid/:end"
-  (ecase outfmt
+  (let* ((hline (format nil "~v@{~A~:*~}~%" 60 "-")))
+    (ecase outfmt
       (:report (apply #'format t "~A~%" found))
       (:eval (format t "cd ~{~A~}~%" (last found))) ;; FIXME last !!!
       (:cd (apply #'format t "Tags: ~A~%~{~A~%~}~&CD: cd ~A~%" found))  ;; FIXME the same
@@ -188,50 +189,17 @@ exec ros -Q -- $0 $0 $@
                 "~A[[~A][Tags file]]~%~{~A~%~}~&[[~A][SRC ~A]]~%"
                 org-hd
                 found-with-dirflag)
-         (format t "~v@{~A~:*~}~%" 60 "-")))
-      (:xcons (apply #'format t "Tags: file://~A~%~{~A~%~}~&SRC: file://~A~%" found))))
+         (princ hline)))
+      (:xcons
+       (apply #'format t "Tags: file://~A~%~{~A~%~}~&SRC: file://~A~%" found)
+       (princ hline)))))
 
 
 (defun select-tags-file (file &optional file-rexpr)
   "Selects tags-file inside tag directory"
   (and (ppcre:scan "[/\]tags[/\]?$" file) (if file-rexpr (ppcre:scan file-rexpr file) t)))
 
-#|
-         saved     yield
-:beg   :beg
-111    :beg,111
-222    :mid,222   :beg,111
-333    :mid,333   :mid,222
-:end   :end,333   :end,333
-|#
 
-#|
-(tagfiles-iter-step
-  (lambda (maybe-tagfile on-tagfile)
-    ;; Debug print, uncomment if needed
-    ;; (format t "      !!!!~A~%" maybe-tagfile)
-
-    (let ((state tagfiles-iter-state))
-      (cond
-        ;; Start of iteration: store :beg
-        ((and (null (car state))
-              (eq maybe-tagfile :beg))
-         (setf (car state) :beg))
-
-        ;; First actual tag file after :beg
-        ((equal state '(:beg nil))
-         (setf (cadr state) maybe-tagfile))
-
-        ;; End of iteration
-        ((and (not (equal state '(nil nil)))
-              (eq maybe-tagfile :end))
-         (funcall on-tagfile :end (cadr state)))
-
-        ;; Intermediate tag files
-        (t
-         (apply on-tagfile state)
-         (setf tagfiles-iter-state `(:mid ,maybe-tagfile)))))))
-|#
 (defun find-tag (tag-rexpr outfmt colorless &optional file-rexpr)
   "Finds a tagged object by tag regular expression"
   (let* ((tag-rexpr-1 (or tag-rexpr ".*"))

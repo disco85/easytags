@@ -179,14 +179,16 @@ exec ros -Q -- $0 $0 $@
                              file)
                          matched-tag))))
       (:emacs
-       (let ((found-with-dirflag
-               (destructuring-bind (file matched src-tag) found
-                 (declare (ignorable file matched))
-                 `(,@found ,(if (maybe-dir-p src-tag) "directory" "file")))))
+       (let ((found-with-dirflag (destructuring-bind (file matched src-tag) found
+                                   (declare (ignorable file matched))
+                                   `(,@found ,(if (maybe-dir-p src-tag) "directory" "file"))))
+             (org-hd (if (eq :beg position) (format nil "# -*- mode: org; -*-~%") "")))
          (apply #'format
                 t
-                "# -*- mode: org; -*-~%[[~A][Tags file]]~%~{~A~%~}~&[[~A][SRC ~A]]~%" ;; FIXME multiple headers
-                found-with-dirflag)))
+                "~A[[~A][Tags file]]~%~{~A~%~}~&[[~A][SRC ~A]]~%"
+                org-hd
+                found-with-dirflag)
+         (format t "~v@{~A~:*~}~%" 60 "-")))
       (:xcons (apply #'format t "Tags: file://~A~%~{~A~%~}~&SRC: file://~A~%" found))))
 
 
@@ -203,25 +205,80 @@ exec ros -Q -- $0 $0 $@
 :end   :end,333   :end,333
 |#
 
+#|
+(tagfiles-iter-step
+  (lambda (maybe-tagfile on-tagfile)
+    ;; Debug print, uncomment if needed
+    ;; (format t "      !!!!~A~%" maybe-tagfile)
+
+    (let ((state tagfiles-iter-state))
+      (cond
+        ;; Start of iteration: store :beg
+        ((and (null (car state))
+              (eq maybe-tagfile :beg))
+         (setf (car state) :beg))
+
+        ;; First actual tag file after :beg
+        ((equal state '(:beg nil))
+         (setf (cadr state) maybe-tagfile))
+
+        ;; End of iteration
+        ((and (not (equal state '(nil nil)))
+              (eq maybe-tagfile :end))
+         (funcall on-tagfile :end (cadr state)))
+
+        ;; Intermediate tag files
+        (t
+         (apply on-tagfile state)
+         (setf tagfiles-iter-state `(:mid ,maybe-tagfile)))))))
+|#
 (defun find-tag (tag-rexpr outfmt colorless &optional file-rexpr)
   "Finds a tagged object by tag regular expression"
   (let* ((tag-rexpr-1 (or tag-rexpr ".*"))
+
          (all-tags-selected (null tag-rexpr))
+
          (tagfiles-iter-state '(nil nil))
+
          (tagfiles-iter-step
+           #|The algorithm is: we iterate over files and instead of just to
+           call `on-tagfile` on every file, we call this lambda-function
+           which classify every item turning it to (position item) where
+           position is :beg/:mid/:end following this simple scheme:
+
+           items  tagfiles-iter-state    on-tagfile call
+           ---------------------------------------------
+           :beg   :beg
+           111    :beg,111
+           222    :mid,222               :beg,111
+           333    :mid,333               :mid,222
+           :end   :end,333               :end,333
+
+           Actually we don't add :beg and :end to list of items but call
+           this `tagfiles-iter-step` function with :beg and :end arg at
+           the beginning and end of the iteration - it's the same.
+           |#
            (lambda (maybe-tagfile on-tagfile)
-             ;; (format t "      !!!!~A~%" maybe-tagfile)
-             (cond ((and (null (car tagfiles-iter-state))
-                         (eq :beg maybe-tagfile))
-                    (setf (car tagfiles-iter-state) maybe-tagfile))
-                   ((equal '(:beg nil) tagfiles-iter-state)
-                    (setf (cadr tagfiles-iter-state) maybe-tagfile))
-                   ((and (not (equal tagfiles-iter-state '(nil nil)))
-                         (eq :end maybe-tagfile))
-                    (funcall on-tagfile :end (cadr tagfiles-iter-state)))
-                   (t (format t "     !CAL! ~A~%" tagfiles-iter-state)
-                      (apply on-tagfile tagfiles-iter-state)
-                      (setf tagfiles-iter-state `(:mid ,maybe-tagfile))))))
+             (cond
+               ;; Start of iteration - store (:beg _)
+               ((and (null (car tagfiles-iter-state))
+                     (eq :beg maybe-tagfile))
+                (setf (car tagfiles-iter-state) :beg))
+
+               ;; First actual tagfile after :beg - store (_ tagfile)
+               ((equal '(:beg nil) tagfiles-iter-state)
+                (setf (cadr tagfiles-iter-state) maybe-tagfile))
+
+               ;; End of iteration - call (on-tagfile :end saved-tagfile)
+               ((and (not (equal tagfiles-iter-state '(nil nil)))
+                     (eq :end maybe-tagfile))
+                (funcall on-tagfile :end (cadr tagfiles-iter-state)))
+
+               ;; Intermediate tag files - call (on-tagfile saved-position saved-tagfile)
+               ;;                        - store (:mid tagfile)
+               (t (apply on-tagfile tagfiles-iter-state)
+                  (setf tagfiles-iter-state `(:mid ,maybe-tagfile))))))
+
          (tagfiles-iter (lambda (on-tagfile)
                           (funcall tagfiles-iter-step :beg on-tagfile)
                           (loop :for d :in (uiop:subdirectories *tags-dir*)
@@ -229,6 +286,7 @@ exec ros -Q -- $0 $0 $@
                                           :when (select-tags-file (namestring tagfile) file-rexpr)
                                             :do (funcall tagfiles-iter-step tagfile on-tagfile)))
                           (funcall tagfiles-iter-step :end on-tagfile)))
+
          (match-tags (lambda (tag-file &aux matched-tags src-tag)
                        (setf
                         matched-tags
@@ -246,7 +304,8 @@ exec ros -Q -- $0 $0 $@
                                                                       all-tags-selected colorless)
                                                             :outfmt outfmt))))
                        (list src-tag matched-tags)))
-         (on-tagfile (lambda (position tagfile) ;; FIXME handle position (:beg/:mid/:end)
+
+         (on-tagfile (lambda (position tagfile)
                        (destructuring-bind (src-tag matched-tags) (funcall match-tags tagfile)
                          (when matched-tags (report-tags position
                                                          (list tagfile matched-tags src-tag)

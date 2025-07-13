@@ -31,9 +31,9 @@ exec ros -Q -- $0 $0 $@
 (defvar *path-sep* (ecase *OS* (:windows "\\") (:unix "/") (:mac "/")))
 
 ;; Supported output formats
-(defconstant +outfmt+ '(:report :grep :emacs :xcons :cd :eval))
+(defconstant +outfmt+ '(:report :grep :emacs :xcons :cd :eval :src))
 
-(defconstant +outfmt-color+ '(:report t :grep t :emacs nil :xcons t :cd t :eval nil))
+(defconstant +outfmt-color+ '(:report t :grep t :emacs nil :xcons t :cd t :eval nil :src nil))
 
 ;; Supported shells autocomplete
 (defconstant +ac-shell+ '(:bash :zsh))
@@ -162,16 +162,24 @@ exec ros -Q -- $0 $0 $@
               (funcall (or combine (constantly new-value)) old-value new-value)
               new-value))))
 
-
-;; TODO to get (:beg/:mid/:end some) in `found`
+;; FIXME EVAL print shit, cause: if tagged selected only one result, it can be :end,:beg,:mid
+;; so -o EMACS for tagged tag2 does not print the org-mode header. And it seems filtered out
+;; items don't lead to switches to :mid and I get wrong `position` with filtering!!!
+;; PROBLEM is bcs filter/matching happens *after* classification of the `position`, so it
+;; is classified as :mid (or :beg?) but it is not printed!
 (defun report-tags (position found outfmt all-tags-selected colorless)
   "Reports found tags for a tag file; `found` is (file [matched] src-tag),
   `position` is :beg/:mid/:end"
   (let* ((hline (format nil "~v@{~A~:*~}~%" 60 "-")))
     (ecase outfmt
-      (:report (apply #'format t "~A~%" found))
-      (:eval (format t "cd ~{~A~}~%" (last found))) ;; FIXME last !!!
-      (:cd (apply #'format t "Tags: ~A~%~{~A~%~}~&CD: cd ~A~%" found))  ;; FIXME the same
+      (:report (apply #'format t "Tags: ~A~%~{~A~%~}~%" found))
+      (:eval (format t "~S: ~S~%" position (car (last found))))
+      ;; (:eval (when (eq position :beg)
+      ;;          (format t "cd ~A~%" (namestring
+      ;;                                   (make-pathname :directory
+      ;;                                                  (pathname-directory (car (last found))))))))
+      (:cd (apply #'format t "Tags: ~A~%~{~A~%~}~&CD: cd ~A~%" found))
+      (:src (format t "~A~%" (nth 2 found)))
       (:grep (destructuring-bind (file matched &optional nil) found
                (dolist (matched-tag matched)
                  (format t "~A:~A~%"
@@ -227,24 +235,29 @@ exec ros -Q -- $0 $0 $@
            the beginning and end of the iteration - it's the same.
            |#
            (lambda (maybe-tagfile on-tagfile)
+             (format t "  !!!~S (~S)~%" maybe-tagfile tagfiles-iter-state)
              (cond
                ;; Start of iteration - store (:beg _)
                ((and (null (car tagfiles-iter-state))
                      (eq :beg maybe-tagfile))
+                (format t "      setf (:beg _)~%")
                 (setf (car tagfiles-iter-state) :beg))
 
                ;; First actual tagfile after :beg - store (_ tagfile)
                ((equal '(:beg nil) tagfiles-iter-state)
+                (format t "      setf (_ ~S)~%" maybe-tagfile)
                 (setf (cadr tagfiles-iter-state) maybe-tagfile))
 
                ;; End of iteration - call (on-tagfile :end saved-tagfile)
                ((and (not (equal tagfiles-iter-state '(nil nil)))
                      (eq :end maybe-tagfile))
+                (format t "      call (:end ~S)~%" (cadr tagfiles-iter-state))
                 (funcall on-tagfile :end (cadr tagfiles-iter-state)))
 
                ;; Intermediate tag files - call (on-tagfile saved-position saved-tagfile)
                ;;                        - store (:mid tagfile)
                (t (apply on-tagfile tagfiles-iter-state)
+                  (format t "      setf (:mid ~S)~%" maybe-tagfile)
                   (setf tagfiles-iter-state `(:mid ,maybe-tagfile))))))
 
          (tagfiles-iter (lambda (on-tagfile)
@@ -273,7 +286,7 @@ exec ros -Q -- $0 $0 $@
                                                             :outfmt outfmt))))
                        (list src-tag matched-tags)))
 
-         (on-tagfile (lambda (position tagfile)
+         (on-tagfile (lambda (position tagfile) ;; TODO maybe to move tagfiles-iter-step call here, after when
                        (destructuring-bind (src-tag matched-tags) (funcall match-tags tagfile)
                          (when matched-tags (report-tags position
                                                          (list tagfile matched-tags src-tag)

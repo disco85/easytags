@@ -170,6 +170,7 @@ exec ros -Q -- $0 $0 $@
 (defun report-tags (position found outfmt all-tags-selected colorless)
   "Reports found tags for a tag file; `found` is (file [matched] src-tag),
   `position` is :beg/:mid/:end"
+  (format t "***report-tags: ~A: ~S~%" position found)
   (let* ((hline (format nil "~v@{~A~:*~}~%" 60 "-")))
     (ecase outfmt
       (:report (apply #'format t "Tags: ~A~%~{~A~%~}~%" found))
@@ -260,14 +261,6 @@ exec ros -Q -- $0 $0 $@
                   (format t "      setf (:mid ~S)~%" maybe-tagfile)
                   (setf tagfiles-iter-state `(:mid ,maybe-tagfile))))))
 
-         (tagfiles-iter (lambda (on-tagfile)
-                          (funcall tagfiles-iter-step :beg on-tagfile)
-                          (loop :for d :in (uiop:subdirectories *tags-dir*)
-                                :do (loop :for tagfile :in (uiop:directory-files d)
-                                          :when (select-tags-file (namestring tagfile) file-rexpr)
-                                            :do (funcall tagfiles-iter-step tagfile on-tagfile)))
-                          (funcall tagfiles-iter-step :end on-tagfile)))
-
          (match-tags (lambda (tag-file &aux matched-tags src-tag)
                        (setf
                         matched-tags
@@ -284,13 +277,31 @@ exec ros -Q -- $0 $0 $@
                                                                       outfmt
                                                                       all-tags-selected colorless)
                                                             :outfmt outfmt))))
-                       (list src-tag matched-tags)))
+                       (when matched-tags (list src-tag matched-tags))))
 
-         (on-tagfile (lambda (position tagfile) ;; TODO maybe to move tagfiles-iter-step call here, after when
-                       (destructuring-bind (src-tag matched-tags) (funcall match-tags tagfile)
-                         (when matched-tags (report-tags position
-                                                         (list tagfile matched-tags src-tag)
-                                                         outfmt all-tags-selected colorless))))))
+         (match-tagfile-tags
+           (lambda (tagfile) (and (select-tags-file (namestring tagfile) file-rexpr)
+                                  (funcall match-tags tagfile))))
+
+         (tagfiles-iter
+           (lambda (on-tagfile &aux iter-i)
+             ;; (funcall tagfiles-iter-step :beg on-tagfile)
+             (setf iter-i 0)
+             (loop :for d :in (uiop:subdirectories *tags-dir*)
+                   :do (loop :for tagfile :in (uiop:directory-files d)
+                             :for matched = (funcall match-tagfile-tags tagfile)
+                             :when matched
+                               :do
+                                  (when (= 0 iter-i) (funcall tagfiles-iter-step :beg on-tagfile))
+                                  (funcall tagfiles-iter-step tagfile (apply on-tagfile matched))
+                                  (incf iter-i)))
+             (when (/= 0 iter-i) (funcall tagfiles-iter-step :end on-tagfile))))
+
+         (on-tagfile (lambda (src-tag matched-tags)
+                       (lambda (position tagfile)
+                         (report-tags position
+                                      (list tagfile matched-tags src-tag)
+                                      outfmt all-tags-selected colorless)))))
     (funcall tagfiles-iter on-tagfile)))
 
 

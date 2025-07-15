@@ -236,7 +236,7 @@ exec ros -Q -- $0 $0 $@
            the beginning and end of the iteration - it's the same.
            |#
            (lambda (maybe-tagfile on-tagfile)
-             (format t "  !!!~S (~S)~%" maybe-tagfile tagfiles-iter-state)
+             (format t " >>> tagfiles-iter-step ~S (~S)~%" maybe-tagfile tagfiles-iter-state)
              (cond
                ;; Start of iteration - store (:beg _)
                ((and (null (car tagfiles-iter-state))
@@ -252,19 +252,21 @@ exec ros -Q -- $0 $0 $@
                ;; End of iteration - call (on-tagfile :end saved-tagfile)
                ((and (not (equal tagfiles-iter-state '(nil nil)))
                      (eq :end maybe-tagfile))
-                (format t "      call (:end ~S)~%" (cadr tagfiles-iter-state))
-                (funcall on-tagfile :end (cadr tagfiles-iter-state)))
+                (format t "      call1 ~S (:end ~S)~%" on-tagfile tagfiles-iter-state)
+                (funcall on-tagfile :end (cadr tagfiles-iter-state))
+                (format t "      /call1 (:end ~S)~%" tagfiles-iter-state))
 
                ;; Intermediate tag files - call (on-tagfile saved-position saved-tagfile)
                ;;                        - store (:mid tagfile)
-               (t (apply on-tagfile tagfiles-iter-state)
+               (t (format t "      call2 ~S ~S~%" on-tagfile tagfiles-iter-state)
+                  (apply on-tagfile tagfiles-iter-state)
                   (format t "      setf (:mid ~S)~%" maybe-tagfile)
                   (setf tagfiles-iter-state `(:mid ,maybe-tagfile))))))
 
-         (match-tags (lambda (tag-file &aux matched-tags src-tag)
+         (match-tags (lambda (tagfile &aux matched-tags src-tag)
                        (setf
                         matched-tags
-                        (loop :for line :in (uiop:read-file-lines tag-file)
+                        (loop :for line :in (uiop:read-file-lines tagfile)
                               :for scanned = (multiple-value-list (ppcre:scan tag-rexpr-1 line))
                               :for is-src-tag = (multiple-value-list (ppcre:scan "^src!" line))
                               :when (car is-src-tag)
@@ -283,22 +285,27 @@ exec ros -Q -- $0 $0 $@
            (lambda (tagfile) (and (select-tags-file (namestring tagfile) file-rexpr)
                                   (funcall match-tags tagfile))))
 
+         (nop (lambda (&rest args) (declare (ignorable args)) nil)) ;; does nothing
+
          (tagfiles-iter
            (lambda (on-tagfile &aux iter-i)
              ;; (funcall tagfiles-iter-step :beg on-tagfile)
              (setf iter-i 0)
-             (loop :for d :in (uiop:subdirectories *tags-dir*)
-                   :do (loop :for tagfile :in (uiop:directory-files d)
+             (loop :for tagdir :in (uiop:subdirectories *tags-dir*)
+                   :do (loop :for tagfile :in (uiop:directory-files tagdir)
                              :for matched = (funcall match-tagfile-tags tagfile)
                              :when matched
                                :do
-                                  (when (= 0 iter-i) (funcall tagfiles-iter-step :beg on-tagfile))
+                                  (when (= 0 iter-i)
+                                    (funcall tagfiles-iter-step :beg nop))
                                   (funcall tagfiles-iter-step tagfile (apply on-tagfile matched))
                                   (incf iter-i)))
-             (when (/= 0 iter-i) (funcall tagfiles-iter-step :end on-tagfile))))
+             (when (/= 0 iter-i) (funcall tagfiles-iter-step :end nop))))
 
          (on-tagfile (lambda (src-tag matched-tags)
+                       (format t " >>> on-tagfile ~S~%" (list src-tag matched-tags))
                        (lambda (position tagfile)
+                         (format t " >>> on-tagfile(2) ~S~%" (list position tagfile))
                          (report-tags position
                                       (list tagfile matched-tags src-tag)
                                       outfmt all-tags-selected colorless)))))

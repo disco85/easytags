@@ -209,7 +209,90 @@ exec ros -Q -- $0 $0 $@
   (and (ppcre:scan "[/\]tags[/\]?$" file) (if file-rexpr (ppcre:scan file-rexpr file) t)))
 
 
+(defun match-tags (tagfile tag-rexpr outfmt colorless)
+  (let* ((tag-rexpr-1 (or tag-rexpr ".*"))
+         (all-tags-selected (null tag-rexpr))
+         (matched-tags nil)
+         (src-tag nil))
+    (setf
+     matched-tags
+     (loop :for line :in (uiop:read-file-lines tagfile)
+           :for scanned = (multiple-value-list (ppcre:scan tag-rexpr-1 line))
+           :for is-src-tag = (multiple-value-list (ppcre:scan "^src!" line))
+           :when (car is-src-tag)
+             :do (setf src-tag (subseq line (length "src!")))
+           :when (car scanned)
+             :append (list (make-matched :str line
+                                         :beg (nth 0 scanned)
+                                         :end (nth 1 scanned)
+                                         :colored (can-i-colorize
+                                                   outfmt
+                                                   all-tags-selected colorless)
+                                         :outfmt outfmt))))
+    (when matched-tags (list src-tag matched-tags))))
+
+
+(defun tagfiles-iter (matched-tagfile-fsm tag-rexpr outfmt colorless &optional file-rexpr)
+  (let* ((match-tags-1
+           (lambda (tagfile) (and (select-tags-file (namestring tagfile) file-rexpr)
+                                  (funcall #'match-tags tagfile tag-rexpr outfmt colorless)))))
+    (loop :for tagdir :in (uiop:subdirectories *tags-dir*)
+          :do (loop :for tagfile :in (uiop:directory-files tagdir)
+                    :for matched-tags = (funcall match-tags-1 tagfile)
+                    :when matched-tags
+                      :do (funcall matched-tagfile-fsm (cons tagfile matched-tags)))))
+  (funcall matched-tagfile-fsm :end!))
+
+
 (defun find-tag (tag-rexpr outfmt colorless &optional file-rexpr)
+  (let*
+      ((out-header (lambda ()
+                     (case outfmt
+                       (:emacs (format t "# -*- mode: org; -*-~%")))))
+
+       (out-footer (lambda () nil))
+
+       (out-el (lambda (el)
+                 (case outfmt
+                   (t (format t "~S~%" el)))))
+
+       (st :beg)
+
+       (st-el nil)
+
+       (fsm (lambda (ev)
+              (case st
+                (:beg (case ev
+                        (:end!
+                         (setf st :end))
+                        (t
+                         (setf st :sol)
+                         (setf st-el ev))))
+                (:sol (case ev
+                        (:end!
+                         (funcall out-header)
+                         (funcall out-el st-el)
+                         (funcall out-footer)
+                         (setf st :end))
+                        (t
+                         (funcall out-header)
+                         (funcall out-el st-el)
+                         (setf st :mul)
+                         (setf st-el ev))))
+                (:mul (case ev
+                        (:end!
+                         (funcall out-el st-el)
+                         (funcall out-footer)
+                         (setf st :end))
+                        (t
+                         (funcall out-el st-el)
+                         (setf st-el ev))))
+                (:end nil))))) ;; end of fsm
+
+    (tagfiles-iter fsm tag-rexpr outfmt colorless file-rexpr)))
+
+
+(defun -find-tag (tag-rexpr outfmt colorless &optional file-rexpr)
   "Finds a tagged object by tag regular expression"
   (let* ((tag-rexpr-1 (or tag-rexpr ".*"))
 

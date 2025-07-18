@@ -35,6 +35,9 @@ exec ros -Q -- $0 $0 $@
 
 (defconstant +outfmt-color+ '(:report t :grep t :emacs nil :xcons t :cd t :eval nil :src nil))
 
+;; The length of horizontal line (hline)
+(defconstant +hline-len+ 60)
+
 ;; Supported shells autocomplete
 (defconstant +ac-shell+ '(:bash :zsh))
 
@@ -54,6 +57,10 @@ exec ros -Q -- $0 $0 $@
   (let ((pn (pathname path)))
     (or (pathname-name pn)
         (car (last (pathname-directory pn))))))
+
+
+(defun put (list el)
+  (append list (list el)))
 
 
 (defun create-link (src-path link-path)
@@ -252,10 +259,14 @@ exec ros -Q -- $0 $0 $@
 
        (out-footer (lambda () nil))
 
+       (hline (format nil "~v@{~A~:*~}~%" +hline-len+ "-"))
+
        (out-el (lambda (el)
                  (case outfmt
+                   (:report (apply #'format t "Tags: ~A~%~*~{~A~%~}~A~%" (put el hline)))
                    (t (format t "~S~%" el)))))
 
+       ;; FSM related (st-*):
        (st :beg)
 
        (st-el nil)

@@ -52,10 +52,21 @@ exec ros -Q -- $0 $0 $@
                                ("on" . 1) ("off" . 0) ("-" . 2)))
 
 ;;; Utilities
-(defun last-path-component (path)
-  "Returns c for /a/b/c/ or /a/b/c"
-  (let ((pn (pathname path)))
-    (or (pathname-name pn)
+
+(defun nully (x)
+  "If `x` looks as empty string/list/0/0.0 then nil is returned, else `x`"
+  ;; typecase bcs SBCL reports type-errors (x is treated in the same expr as having diff types)
+  (typecase x
+    (null nil)
+    (string (if (string= "" x) nil x))
+    (number (if (= 0 x) nil x))
+    (t x)))
+
+
+(defun last-path-component (path &key and-type)
+  "Returns c for /a/b/c/ or /a/b/c.txt. With `and-type` - c.txt for the second"
+  (let* ((pn (pathname path)))
+    (or (nully (if and-type (file-namestring pn) (pathname-name pn)))
         (car (last (pathname-directory pn))))))
 
 
@@ -286,7 +297,7 @@ exec ros -Q -- $0 $0 $@
                    (:emacs
                     (let ((el-1 (destructuring-bind (tagfile srcfile matched-tags) el
                                   (list
-                                   (last-path-component srcfile)
+                                   (last-path-component srcfile :and-type t)
                                    tagfile
                                    srcfile
                                    (if (maybe-dir-p srcfile) "directory" "file")

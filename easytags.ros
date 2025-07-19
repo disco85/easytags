@@ -248,12 +248,14 @@ exec ros -Q -- $0 $0 $@
                     :for matched-tags = (funcall match-tags-1 tagfile)
                     :when matched-tags
                       :do (funcall matched-tagfile-fsm (cons tagfile matched-tags)))))
-  (funcall matched-tagfile-fsm :end!))
+  (funcall matched-tagfile-fsm :end!)) ;; tagfile src-tag [matched-tags]+
 
 
 (defun find-tag (tag-rexpr outfmt colorless &optional file-rexpr)
   (let*
-      ((out-header (lambda ()
+      ((all-tags-selected (null tag-rexpr))
+
+       (out-header (lambda ()
                      (case outfmt
                        (:emacs (format t "# -*- mode: org; -*-~%")))))
 
@@ -263,7 +265,22 @@ exec ros -Q -- $0 $0 $@
 
        (out-el (lambda (el)
                  (case outfmt
+                   (:grep (destructuring-bind (tagfile srcfile matched-tags) el
+                            (declare (ignorable tagfile))
+                            (loop
+                              :for matched-tag :in matched-tags
+                              :when (not (eql 0 (search "src!" (matched-str matched-tag))))
+                                :do
+                                   (format t "~A:~A~%"
+                                           (if (can-i-colorize outfmt all-tags-selected colorless)
+                                               (apply #'ansi-colorize srcfile +file-ansi-attrs+)
+                                               srcfile)
+                                           matched-tag))))
                    (:report (apply #'format t "Tags: ~A~%~*~{~A~%~}~A~%" (put el hline)))
+                   (:cd (apply #'format t "Tags: ~A~%~*~{~A~%~}~&CD: cd ~A~%"
+                               (put el (namestring
+                                        (make-pathname :directory
+                                                       (pathname-directory (nth 1 el)))))))
                    (t (format t "~S~%" el)))))
 
        ;; FSM related (st-*):

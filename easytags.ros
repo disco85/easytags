@@ -31,9 +31,9 @@ exec ros -Q -- $0 $0 $@
 (defvar *path-sep* (ecase *OS* (:windows "\\") (:unix "/") (:mac "/")))
 
 ;; Supported output formats
-(defconstant +outfmt+ '(:report :grep :emacs :xcons :cd :eval :src))
+(defconstant +outfmt+ '(:report :grep :emacs :xcons :cd :src))
 
-(defconstant +outfmt-color+ '(:report t :grep t :emacs nil :xcons t :cd t :eval nil :src nil))
+(defconstant +outfmt-color+ '(:report t :grep t :emacs nil :xcons t :cd t :src nil))
 
 ;; The length of horizontal line (hline)
 (defconstant +hline-len+ 60)
@@ -276,12 +276,13 @@ exec ros -Q -- $0 $0 $@
                                                (apply #'ansi-colorize srcfile +file-ansi-attrs+)
                                                srcfile)
                                            matched-tag))))
-                   (:cd (apply #'format t "Tags: ~A~%~*~{~A~%~}~&CD: cd ~A~%"
-                               (put el (namestring
-                                        (make-pathname :directory
-                                                       (pathname-directory (nth 1 el)))))))
+                   (:cd (apply #'format t "cd ~A~%"
+                               (list (namestring (make-pathname :directory
+                                                                (pathname-directory (nth 1 el)))))))
                    (:report (apply #'format t "Tags: ~A~%~*~{~A~%~}~A~%" (put el hline)))
-                   (:xcons (apply #'format t "Tags: file://~A~%Src: file://~A~%~{~A~%~}~A~%" (put el hline)))
+                   (:src (apply #'format t "~A~%" (list (nth 1 el))))
+                   (:xcons (apply #'format t "[Tags] file://~A~%[ Src] file://~A~%~{~A~%~}~A~%"
+                                  (put el hline)))
                    (t (format t "~S~%" el)))))
 
        ;; FSM related (st-*):
@@ -565,7 +566,7 @@ complete -F _easytags_auto_complete <SCRIPT-PATH>
 (defun cli-tagged-cmd ()
   (clingon:make-command
    :name "tagged"
-   :usage "tagged [tag-regexp] [tag-file-regexp] [-o REPORT,GREP,EMACS,XCONS,CD,EVAL] [-c 1,0]"
+   :usage "tagged [tag-regexp] [tag-file-regexp] [-o REPORT,GREP,EMACS,XCONS,CD] [-c 1,0]"
    :examples '(("List all tagged objects:" . "tagged")
                ("List by tag's regexp:" . "tagged 'tag[1-9]+'")
                ("List by specific tag's regexp:" . "tagged 'user!tag[1-9]+'")
@@ -576,8 +577,6 @@ complete -F _easytags_auto_complete <SCRIPT-PATH>
                ("List with Emacs org-mode report in ZSH:" . "emacs =(SCRIPT tagged mytag -o GREP)")
                ("List with X console report supporting URL click:" . "tagged mytag -o XCONS")
                ("List with cd-commands report (copy-paste, execute):" . "tagged mytag -o CD")
-               ("List with Shell-eval report changing directory to the first source:" .
-                "eval $(SCRIPT tagged mytag -o EVAL)")
                ("List suppressing color:" . "tagged mytag -c 0")
                ("List forcing color:" . "tagged mytag -c 1"))
    :description "Find tagged objects filtering them by regexps of tags, tag-file's full path"

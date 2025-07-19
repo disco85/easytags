@@ -264,7 +264,7 @@ exec ros -Q -- $0 $0 $@
        (hline (format nil "~v@{~A~:*~}~%" +hline-len+ "-"))
 
        (out-el (lambda (el)
-                 (case outfmt
+                 (ecase outfmt
                    (:grep (destructuring-bind (tagfile srcfile matched-tags) el
                             (declare (ignorable tagfile))
                             (loop
@@ -276,14 +276,27 @@ exec ros -Q -- $0 $0 $@
                                                (apply #'ansi-colorize srcfile +file-ansi-attrs+)
                                                srcfile)
                                            matched-tag))))
-                   (:cd (apply #'format t "cd ~A~%"
-                               (list (namestring (make-pathname :directory
-                                                                (pathname-directory (nth 1 el)))))))
+                   (:cd (format t "cd ~A~%"
+                                (namestring (make-pathname :directory
+                                                           (pathname-directory (nth 1 el))))))
                    (:report (apply #'format t "Tags: ~A~%~*~{~A~%~}~A~%" (put el hline)))
-                   (:src (apply #'format t "~A~%" (list (nth 1 el))))
+                   (:src (format t "~A~%" (nth 1 el)))
                    (:xcons (apply #'format t "[Tags] file://~A~%[ Src] file://~A~%~{~A~%~}~A~%"
                                   (put el hline)))
-                   (t (format t "~S~%" el)))))
+                   (:emacs
+                    (let ((el-1 (destructuring-bind (tagfile srcfile matched-tags) el
+                                  (list
+                                   (last-path-component srcfile)
+                                   tagfile
+                                   srcfile
+                                   (if (maybe-dir-p srcfile) "directory" "file")
+                                   matched-tags
+                                   hline))))
+                      (apply
+                       #'format
+                       t
+                       "* ~A~%~%** Files~%~%[[~A][Tags file]]~%~%[[~A][SRC ~A]]~%~%** Tags~%~%~{- ~A~%~}~%~A~%"
+                       el-1))))))
 
        ;; FSM related (st-*):
        (st :beg)

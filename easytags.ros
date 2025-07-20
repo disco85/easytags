@@ -53,6 +53,8 @@ exec ros -Q -- $0 $0 $@
 
 ;;; Utilities
 
+(defun dbg (s x) (format t "*** TRACE[~A]: ~S~%" s x) x)
+
 (defun nully (x)
   "If `x` looks as empty string/list/0/0.0 then nil is returned, else `x`"
   ;; typecase bcs SBCL reports type-errors (x is treated in the same expr as having diff types)
@@ -82,10 +84,21 @@ exec ros -Q -- $0 $0 $@
     (:mac (uiop:run-program `("ln" "-s" ,src-path ,link-path)))))
 
 
+(defun resolve-path (path)
+  "Resolves .. in a path"
+  (let ((parsed-path
+          ;; adds CWD to pathname structure (without to resolve it)
+          (uiop:merge-pathnames* (if (equal *OS* :windows)
+                                     (uiop:parse-native-namestring path)
+                                     (uiop:parse-unix-namestring path)))))
+    (uiop:resolve-symlinks (uiop:ensure-absolute-pathname parsed-path))))
+
+
 (defun tag-fs-object (path tags)
   "Tags FS-object"
-  (let* ((name (last-path-component path))
-         (abs-path (truename path))
+  (let* ((path-1 (resolve-path path))
+         (name (last-path-component path-1))
+         (abs-path (truename path-1))
          (uniq-part (format nil "~X" (sxhash abs-path)))
          (tag-dirname (format nil "~A-~A/" name uniq-part))  ;; FIXME not portable /
          (tag-dir (merge-pathnames tag-dirname *tags-dir*))
@@ -354,25 +367,49 @@ exec ros -Q -- $0 $0 $@
   ;; (format t "~A !!!!!!!!~%" argv0)
   (format t (replace-all `(("<SCRIPT-NAME>" . ,argv0) ("<SCRIPT-PATH>" . ,argv0))
 "
-function _easytags_auto_complete()
+_easytags_auto_complete()
 {
-  latest=\"${COMP_WORDS[$COMP_CWORD]}\"
-  prev=\"${COMP_WORDS[$COMP_CWORD - 1]}\"
-  words=\"\"
-  case \"${prev}\" in
+  local words
+  local wN
+  local w_1
+  local w1
+  wN=\"${COMP_WORDS[$COMP_CWORD]}\"
+  w_1=\"${COMP_WORDS[$COMP_CWORD - 1]:-}\"
+  w1=\"${COMP_WORDS[1]:-}\"
+  case \"${w_1}\" in
     <SCRIPT-PATH>)
       words=\"tag tagged tags autocomplete\"
+      COMPREPLY=($(compgen -W \"$words\" -- $wN))
       ;;
     tag)
-      words=`/bin/ls`
+      COMPREPLY=($(compgen -f -- \"$wN\"))
       ;;
     tagged)
       words=`<SCRIPT-PATH> tags -u`
+      COMPREPLY=($(compgen -W \"$words\" -- $wN))
+      ;;
+    autocomplete)
+      words=\"-s --shell\"
+      COMPREPLY=($(compgen -W \"$words\" -- $wN))
+      ;;
+    -s | --shell)
+      [ \"$w1\" = autocomplete ] && words=\"BASH ZSH\"
+      COMPREPLY=($(compgen -W \"$words\" -- $wN))
+      ;;
+    -o | --outfmt)
+      [ \"$w1\" = tagged ] && words=\"REPORT GREP EMACS XCONS CD\"
+      COMPREPLY=($(compgen -W \"$words\" -- $wN))
+      ;;
+    -c | --colorless)
+      [ \"$w1\" = tagged ] && words=\"y n\"
+      COMPREPLY=($(compgen -W \"$words\" -- $wN))
       ;;
     *)
+      [ \"$w1\" = tag ] && words=`<SCRIPT-PATH> tags -u`
+      [ \"$w1\" = tagged ] && words=\"-o --outfmt -c --colorless\"
+      COMPREPLY=($(compgen -W \"$words\" -- $wN))
       ;;
   esac
-  COMPREPLY=($(compgen -W \"$words\" -- $latest))
   return 0
 }
 complete -F _easytags_auto_complete <SCRIPT-PATH>
@@ -437,7 +474,7 @@ complete -F _easytags_auto_complete <SCRIPT-PATH>
 (defun cli-tag-cmd ()
   (clingon:make-command
    :name "tag"
-   :usage "tag file,directory tag1 [tag...]"
+   :usage "file,directory tag1 [tag...]"
    :examples '(("Tag a file:" . "tag some-file tag1 tag2 tag3"))
    :description "Tag file object"
    :handler #'cli-tag-cmd-handler))
@@ -446,7 +483,7 @@ complete -F _easytags_auto_complete <SCRIPT-PATH>
 (defun cli-tagged-cmd ()
   (clingon:make-command
    :name "tagged"
-   :usage "tagged [tag-regexp] [tag-file-regexp] [-o REPORT,GREP,EMACS,XCONS,CD] [-c 1,0]"
+   :usage "[tag-regexp] [tag-file-regexp] [-o REPORT,GREP,EMACS,XCONS,CD] [-c 1,0]"
    :examples '(("List all tagged objects:" . "tagged")
                ("List by tag's regexp:" . "tagged 'tag[1-9]+'")
                ("List by specific tag's regexp:" . "tagged 'user!tag[1-9]+'")
@@ -524,6 +561,7 @@ complete -F _easytags_auto_complete <SCRIPT-PATH>
 
 ;;; MAIN
 (defun main (&rest argv)
+  ;; (trace tag-fs-object merge-pathnames ensure-directories-exist last-path-component xshash)
   (let* ((qual-argv (process-argv argv))
          (fixed-argv (ecase (car qual-argv)
                        (:script (rest argv))

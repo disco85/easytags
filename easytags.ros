@@ -517,7 +517,7 @@ complete -F _easytags_auto_complete <SCRIPT-PATH>
   (clingon:make-command
    :name "autocomplete"
    :usage (format nil "[-s ~{~A~^,~}]" +ac-shell+)
-   :examples '(("Inject autocomplete code in BASH shell" . "eval $(SCRIPT autocomplete -s BASH)"))
+   :examples '(("Inject autocomplete code in BASH shell" . "source <(SCRIPT autocomplete -s BASH)"))
    :description "Inject autocomplete code into the current shell"
    :handler (lambda (cmd) (cli-autocomplete-cmd-handler argv0 cmd))
    :options (cli-autocomplete-cmd-opts)))

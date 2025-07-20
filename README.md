@@ -1,29 +1,24 @@
 # README #
 
-This README would normally document whatever steps are necessary to get your application up and running.
+## About
 
-### What is this repository for? ###
+This is simple command line tool for tag of files, directories and search of
+them by these tags. It supports:
 
-* Quick summary
-* Version
-* [Learn Markdown](https://bitbucket.org/tutorials/markdowndemo)
+- output in different formats
+- output in "clickable" format (console URL) allowing to open tagged file, directory
+- output in "executable" format (shell command) allowing to open, jump to tagged file, directory,
+  directory of the file
+- output in Emacs ORG-MODE allowing to see tagged files, directories in a document-like
+  format with ability to jump to tagged file, directory
+- output in GREP-like format
+- color output (optional)
+- shell (Bash, ZSH) autocomplete
+- very simple structure of tags repository allowing easy manual modification of it
 
-### How do I get set up? ###
+The tool (easytags) is written in Common Lisp and it is crossplatform, but the author mostly
+tested it on Linux.
 
-* Summary of set up
-* Configuration
-* Dependencies
-* Database configuration
-* How to run tests
-* Deployment instructions
+## Examples of usage
 
-### Contribution guidelines ###
-
-* Writing tests
-* Code review
-* Other guidelines
-
-### Who do I talk to? ###
-
-* Repo owner or admin
-* Other community or team contact
+TODO

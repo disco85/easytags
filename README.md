@@ -1,8 +1,8 @@
-# README #
+# Easytag - simple file-objects tagging tool/script
 
 ## About
 
-This is simple command line tool to tag files, directories and to search
+This is a simple command line tool to tag files, directories and to search
 them by these tags. It supports:
 
 - output in different formats
@@ -73,3 +73,32 @@ emacs =(<TOOL> tagged mytag -o GREP)
 # Inject autocomplete code in BASH shell:
 source <(<TOOL> autocomplete -s BASH)
 ```
+
+## Storage
+
+Typically the storage is `.tags` directory in the user's home directory.
+Its structure looks as:
+
+```
+/home/<USER>/.tags
+├── a-1C54DF84F7F8FD78
+│   ├── link -> /home/<USER>/proj/dir1/a.py
+│   └── tags
+├── groovy-language-server-3816B49D3C72DD87
+│   ├── link -> /home/<USER>/proj/dir2/groovy-language-server/
+│   └── tags
+└── zz-357E10D1499BFB13
+    ├── link -> /home/<USER>/proj/dir3/zz.xml
+    └── tags
+         :
+         `........CONTENT..of..tags..file.........
+          :                                      :
+          : src!/home/<USER>/proj/dir3/zz.xml    :
+          : user!tag3                            :
+          :                                      :
+          :......................................:
+```
+
+where we see that file `zz.xml` from `proj/dir3/` is tagged by `tag3` tag (which
+was entered by a user, so it's in `user` namespace). The `tag`-file is just usual
+text file and can be modified manually.

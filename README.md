@@ -102,3 +102,23 @@ Its structure looks as:
 where we see that file `zz.xml` from `proj/dir3/` is tagged by `tag3` tag (which
 was entered by a user, so it's in `user` namespace). The `tag`-file is just usual
 text file and can be modified manually.
+
+To find it and jump/open it, you can use, for example:
+
+```
+$ <TOOL> tagged tag3 -o XCONS
+[Tags] file:///home/<USER>/.tags/zz-357E10D1499BFB13/tags
+[ Src] file:///home/<USER>/proj/dir3/zz.xml
+user!tag3
+```
+
+then click on the link by the mouse and that's it!
+
+If you want to change the current directory to the directory of the tagged
+object (of `xx.zml` file), do:
+
+```
+`<TOOL> tagged tag3 -o CD`
+```
+
+and so on.

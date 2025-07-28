@@ -333,8 +333,7 @@ exec ros -Q -- $0 $0 $@
   (destructuring-bind (&optional tag-rexpr file-rexpr) (clingon:command-arguments cmd)
     (let* ((outfmt (cli-kw-getopt cmd :outfmt))
            (colorless (clingon:getopt cmd :colorless)))
-      (find-tag tag-rexpr outfmt colorless file-rexpr))
-    ))
+      (find-tag tag-rexpr outfmt colorless file-rexpr))))
 
 
 (defun cli-tags-cmd-handler (cmd)
@@ -364,8 +363,9 @@ exec ros -Q -- $0 $0 $@
 
 (defun cli-autocomplete-cmd-handler (argv0 cmd)
   (declare (ignorable cmd))
-  ;; (format t "~A !!!!!!!!~%" argv0)
-  (format t (replace-all `(("<SCRIPT-NAME>" . ,argv0) ("<SCRIPT-PATH>" . ,argv0))
+  (let ((shell (cli-kw-getopt cmd :shell)))
+    (ecase shell
+      (:bash (format t (replace-all `(("<SCRIPT-NAME>" . ,argv0) ("<SCRIPT-PATH>" . ,argv0))
 "
 _easytags_auto_complete()
 {
@@ -414,7 +414,7 @@ _easytags_auto_complete()
 }
 complete -F _easytags_auto_complete <SCRIPT-PATH>
 ")))
-
+      (:zsh (format t "Sorry, ZSH still is not supported~%")))))
 
 
 (defun cli-tagged-cmd-opts ()

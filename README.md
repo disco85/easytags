@@ -77,7 +77,9 @@ source <(<TOOL> autocomplete -s BASH)
 ## Storage
 
 Typically the storage is `.tags` directory in the user's home directory.
-Its structure looks as:
+But it can be changed with an environment variable `EASYTAG_HOME`.
+
+The structure of the storage looks similarly to:
 
 ```
 /home/<USER>/.tags

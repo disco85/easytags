@@ -16,8 +16,10 @@ exec ros -Q -- $0 $0 $@
 ;;; Variables
 ;; Must ends with / (in CL it's dir!)
 (defvar *tags-dir*
-  (uiop:native-namestring
-   (merge-pathnames ".tags/" (user-homedir-pathname))))
+  (uiop:if-let ((env-tags-dir (uiop:getenv "EASYTAG_HOME")))
+               (uiop:ensure-directory-pathname (uiop:native-namestring env-tags-dir))
+               (uiop:native-namestring
+                (merge-pathnames ".tags/" (user-homedir-pathname)))))
 
 
 ;; Current OS
@@ -106,7 +108,7 @@ exec ros -Q -- $0 $0 $@
          (name (last-path-component path-1))
          (abs-path (truename path-1))
          (uniq-part (format nil "~X" (sxhash abs-path)))
-         (tag-dirname (format nil "~A-~A/" name uniq-part))  ;; FIXME not portable /
+         (tag-dirname (format nil "~A-~A/" name uniq-part))  ;; .../ even for Win
          (tag-dir (merge-pathnames tag-dirname *tags-dir*))
          (tags-file (merge-pathnames #p"tags" tag-dir))
          (link-file (merge-pathnames #p"link" tag-dir))
@@ -253,6 +255,7 @@ exec ros -Q -- $0 $0 $@
        (hline (format nil "~v@{~A~:*~}~%" +hline-len+ "-"))
 
        (get-srcdir (lambda (el)
+                     "For dir it returns the dir itself"
                      (namestring (make-pathname :directory
                                                 (pathname-directory (nth 1 el))))))
 

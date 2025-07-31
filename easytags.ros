@@ -14,8 +14,17 @@ exec ros -Q -- $0 $0 $@
 
 
 ;;; Variables
-;; Must ends with / (in CL it's dir!)
-(defvar *tags-dir*
+;; 1. dirs must ends with / (in CL it's dir!)
+;; 2. All platform/OS/installation specific variables are defined as
+;;    mutable variables (with `defparameter`) and they are defined at
+;;    rune-time (see `main`) so their values will be relevant to the
+;;    environment when we run. Else, with binary built by `ros build ...`
+;;    we get a binary with hardcoded (but not seen with `strings`!!!)
+;;    variables from the build PC box!
+
+(defparameter *tags-dir* nil)
+
+(defun det-*tags-dir* ()
   (uiop:if-let ((env-tags-dir (uiop:getenv "EASYTAG_HOME")))
                (uiop:ensure-directory-pathname (uiop:native-namestring env-tags-dir))
                (uiop:native-namestring
@@ -23,14 +32,22 @@ exec ros -Q -- $0 $0 $@
 
 
 ;; Current OS
-(defvar *OS* (cond ((member :windows *features*) :windows)
-                   ((member :unix *features*)
-                    (cond ((member :darwin *features*) :mac)
-                          (t :unix)))
-                   (t (error "OS not recognized!"))))
+(defparameter *OS* nil)
+
+(defun det-*OS* ()
+  (cond ((member :windows *features*) :windows)
+        ((member :unix *features*)
+         (cond ((member :darwin *features*) :mac)
+               (t :unix)))
+        (t (error "OS not recognized!"))))
+
 
 ;; Path separator (as a string)
-(defvar *path-sep* (ecase *OS* (:windows "\\") (:unix "/") (:mac "/")))
+(defparameter *path-sep* nil)
+
+(defun det-*path-sep* ()
+  (ecase *OS* (:windows "\\") (:unix "/") (:mac "/")))
+
 
 ;; Supported output formats
 (defconstant +outfmt+ '(:report :grep :emacs :xcons :cd :src))
@@ -242,6 +259,10 @@ exec ros -Q -- $0 $0 $@
   (funcall matched-tagfile-fsm :end!)) ;; tagfile src-tag [matched-tags]+
 
 
+(defun urlenc (url)
+  (replace-all '(("#" . "%23")) url))
+
+
 (defun find-tag (tag-rexpr outfmt colorless &optional file-rexpr)
   (let*
       ((all-tags-selected (null tag-rexpr))
@@ -276,11 +297,15 @@ exec ros -Q -- $0 $0 $@
                    (:report (apply #'format t "Tags: ~A~%~*~{~A~%~}~A~%" (add-last el hline)))
                    (:src (format t "~A~%" (nth 1 el)))
                    (:xcons
-                    (apply
-                     #'format
-                     t
-                     "[Tags] file://~A~%[ Src] file://~A~%[ Dir] file://~A~%~{~A~%~}~A~%"
-                     (add-nth (add-last el hline) (funcall get-srcdir el) 2)))
+                    (let ((el-1 (add-nth (add-last el hline) (funcall get-srcdir el) 2)))
+                      (setf (nth 0 el-1) (urlenc (namestring (nth 0 el-1)))
+                            (nth 1 el-1) (urlenc (namestring (nth 1 el-1)))
+                            (nth 2 el-1) (urlenc (namestring (nth 2 el-1))))
+                      (apply
+                       #'format
+                       t
+                       "[Tags] file://~A~%[ Src] file://~A~%[ Dir] file://~A~%~{~A~%~}~A~%"
+                       el-1)))
                    (:emacs
                     (let ((el-1 (destructuring-bind (tagfile srcfile matched-tags) el
                                   (list
@@ -577,7 +602,10 @@ complete -F _easytags_auto_complete <SCRIPT-PATH>
 ;;; MAIN
 (defun main (&rest argv)
   ;; (trace tag-fs-object merge-pathnames ensure-directories-exist last-path-component xshash)
-  (let* ((qual-argv (process-argv argv))
+  (let* ((*tags-dir* (det-*tags-dir*))
+         (*OS* (det-*OS*))
+         (*path-sep* (det-*path-sep*))
+         (qual-argv (process-argv argv))
          (fixed-argv (ecase (car qual-argv)
                        (:script (rest argv))
                        (:binary argv))))

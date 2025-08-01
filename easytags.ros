@@ -297,6 +297,13 @@ exec ros -Q -- $0 $0 "$@"
                     (encode-byte byte out)))))))
 
 
+;; (declaim (ftype (function () t) cli-simple-quote))
+(defun cli-simple-quote (s)
+  (case *OS*
+    (:windows (concatenate 'string "\"" s "\""))
+    (t (concatenate 'string "'" s "'"))))
+
+
 (defun find-tag (tag-rexpr outfmt colorless &optional file-rexpr)
   (let*
       ((all-tags-selected (null tag-rexpr))
@@ -329,7 +336,7 @@ exec ros -Q -- $0 $0 "$@"
                                                (apply #'ansi-colorize srcfile +file-ansi-attrs+)
                                                srcfile)
                                            matched-tag))))
-                   (:cd (format t "cd ~A~%" (funcall get-srcdir el)))
+                   (:cd (format t "cd ~A~%" (cli-simple-quote (funcall get-srcdir el))))
                    (:report (apply #'format t "Tags: ~A~%~*~{~A~%~}~A~%" (add-last el hline)))
                    (:src (format t "~A~%" (nth 1 el)))
                    (:xcons
@@ -607,7 +614,11 @@ complete -F _easytags_auto_complete <SCRIPT-PATH>
    :authors '("John Doe <john.doe@example.org")
    :license "BSD 2-Clause"
    :sub-commands (list (cli-tag-cmd) (cli-tagged-cmd) (cli-tags-cmd) (cli-autocomplete-cmd argv0))
-   :handler (lambda (cmd) (declare (ignore cmd)))))
+   :handler (lambda (cmd)
+              (format t "No known subcommand provided!~%~%")
+              (clingon:print-usage cmd *standard-output*)
+              (uiop:quit 1))))
+
 
 (defun full-argv ()
   (or

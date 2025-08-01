@@ -259,8 +259,42 @@ exec ros -Q -- $0 $0 $@
   (funcall matched-tagfile-fsm :end!)) ;; tagfile src-tag [matched-tags]+
 
 
-(defun urlenc (url)
-  (replace-all '(("#" . "%23")) url))
+(defun url-encode-rfc3986 (input &optional safe-chars)
+  "Percent-encodes INPUT string according to RFC 3986 using only standard Common Lisp."
+  (labels ((unreserved-char-p (ch)
+             (or (and (char>= ch #\A) (char<= ch #\Z))
+                 (and (char>= ch #\a) (char<= ch #\z))
+                 (and (char>= ch #\0) (char<= ch #\9))
+                 (member ch '(#\- #\_ #\. #\~))
+                 (member ch (coerce safe-chars 'list))))
+           (encode-byte (byte stream)
+             (format stream "%~2,'0X" byte))
+           ;; Manual UTF-8 encoding for a single character
+           (utf8-bytes (ch)
+             (let ((code (char-code ch)))
+               (cond
+                 ((<= code #x7F)
+                  (list code))
+                 ((<= code #x7FF)
+                  (list (+ #xC0 (ash code -6))
+                        (+ #x80 (logand code #x3F))))
+                 ((<= code #xFFFF)
+                  (list (+ #xE0 (ash code -12))
+                        (+ #x80 (logand (ash code -6) #x3F))
+                        (+ #x80 (logand code #x3F))))
+                 ((<= code #x10FFFF)
+                  (list (+ #xF0 (ash code -18))
+                        (+ #x80 (logand (ash code -12) #x3F))
+                        (+ #x80 (logand (ash code -6) #x3F))
+                        (+ #x80 (logand code #x3F))))
+                 (t
+                  (error "Invalid Unicode character: ~A" ch))))))
+    (with-output-to-string (out)
+      (loop :for ch :across input :do
+           (if (unreserved-char-p ch)
+               (write-char ch out)
+               (loop :for byte :in (utf8-bytes ch) :do
+                    (encode-byte byte out)))))))
 
 
 (defun find-tag (tag-rexpr outfmt colorless &optional file-rexpr)
@@ -280,6 +314,8 @@ exec ros -Q -- $0 $0 $@
                      (namestring (make-pathname :directory
                                                 (pathname-directory (nth 1 el))))))
 
+       (safe-url-chars "/")
+
        (out-el (lambda (el)
                  (ecase outfmt
                    (:grep (destructuring-bind (tagfile srcfile matched-tags) el
@@ -298,9 +334,9 @@ exec ros -Q -- $0 $0 $@
                    (:src (format t "~A~%" (nth 1 el)))
                    (:xcons
                     (let ((el-1 (add-nth (add-last el hline) (funcall get-srcdir el) 2)))
-                      (setf (nth 0 el-1) (urlenc (namestring (nth 0 el-1)))
-                            (nth 1 el-1) (urlenc (namestring (nth 1 el-1)))
-                            (nth 2 el-1) (urlenc (namestring (nth 2 el-1))))
+                      (setf (nth 0 el-1) (url-encode-rfc3986 (namestring (nth 0 el-1)) safe-url-chars)
+                            (nth 1 el-1) (url-encode-rfc3986 (namestring (nth 1 el-1)) safe-url-chars)
+                            (nth 2 el-1) (url-encode-rfc3986 (namestring (nth 2 el-1)) safe-url-chars))
                       (apply
                        #'format
                        t
@@ -609,6 +645,7 @@ complete -F _easytags_auto_complete <SCRIPT-PATH>
          (fixed-argv (ecase (car qual-argv)
                        (:script (rest argv))
                        (:binary argv))))
+    (format t "~S~%" argv)
     (clingon:run (cli-main-cmd (nth 1 qual-argv)) fixed-argv)))
 
 ;;; vim: set ft=lisp lisp:

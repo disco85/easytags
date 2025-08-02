@@ -121,7 +121,7 @@ If you want to change the current Shell directory to the directory of the tagged
 object (of `xx.zml` file), do:
 
 ```
-`<TOOL> tagged tag3 -o CD`
+<TOOL> tagged tag3 -o CD
 ```
 
 and so on.

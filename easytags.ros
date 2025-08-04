@@ -611,7 +611,7 @@ complete -F _easytags_auto_complete <SCRIPT-PATH>
    :name "tags"
    :description "Tags over file objects"
    :version "0.1.0"
-   :authors '("John Doe <john.doe@example.org")
+   :authors '("John Doe <john.doe@example.org>")
    :license "BSD 2-Clause"
    :sub-commands (list (cli-tag-cmd) (cli-tagged-cmd) (cli-tags-cmd) (cli-autocomplete-cmd argv0))
    :handler (lambda (cmd)
@@ -631,11 +631,11 @@ complete -F _easytags_auto_complete <SCRIPT-PATH>
 
 ;; Real exe:
 ;; ========
-;; FMT = ("tagged" "java" "-o" "GREP") !!!! ("/home/nothome/prj/shared/easytag/easytags" "tagged" "java" "-o" "GREP")
+;; FMT = ("tagged" "java" "-o" "GREP") !!!! (".../easytag/easytags" "tagged" "java" "-o" "GREP")
 
 ;; Script:
 ;; =======
-;; FMT = ("./easytags.ros" "tagged" "java" "-o" "GREP") !!!! ("/home/nothome/.roswell/impls/x86-64/linux/sbcl-bin/2.0.4/bin/sbcl")
+;; FMT = ("./easytags.ros" "tagged" "java" "-o" "GREP") !!!! (".../.roswell/impls/x86-64/linux/sbcl-bin/2.0.4/bin/sbcl")
 (defun process-argv (argv)
   (let* ((fargv (full-argv))
          (buf (make-string 3))

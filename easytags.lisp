@@ -74,11 +74,17 @@
          (tags-file (merge-pathnames #p"tags" tag-dir))
          (link-file (merge-pathnames #p"link" tag-dir))
          (new (nth-value 1 (ensure-directories-exist tag-dir))))
-    (when new
-      (with-open-file (f tags-file :direction :output)
-        (write-string (format nil "src!~A~%~{user!~A~%~}" abs-path tags) f))
-      (create-link (namestring abs-path) (namestring link-file))
-      (format t "Object ~A tagged in ~A~%" abs-path tags-file))))
+    (if new
+        (prog1
+            (with-open-file (f tags-file :direction :output)
+              (write-string (format nil "src!~A~%~{user!~A~%~}" abs-path tags) f))
+          (create-link (namestring abs-path) (namestring link-file))
+          (format t "Object ~A tagged in ~A~%" abs-path tags-file))
+        (with-open-file (f tags-file :direction :output
+                                     :if-exists :append
+                                     :if-does-not-exist :create)
+          (write-string (format nil "~{user!~A~%~}" tags) f)
+          (format t "Object ~A additionally tagged in ~A~%" abs-path tags-file)))))
 
 
 (defstruct (matched
@@ -280,7 +286,8 @@
       (unwind-protect
            (progn
              (filter-file-lines path temp-path tag-rexprs)
-             (rename-file temp-path path))
+             (uiop:copy-file temp-path path)
+             (delete-file temp-path))
         ;; cleanup in case something fails
         (when (probe-file temp-path)
           (delete-file temp-path))))))
@@ -291,7 +298,8 @@
           :do (loop :for tagfile :in (uiop:directory-files tagdir)
                     :for matched-tagfile = (match-tagfile tagfile)
                     :when matched-tagfile
-                      :do (filter-file-lines-in-place tagfile tag-rexprs)))))
+                      :do ;;(format t "!!!MATCHED: ~A~%" tagfile)
+                          (filter-file-lines-in-place tagfile tag-rexprs)))))
 
 
 ;;; CLI options
@@ -305,10 +313,13 @@
     (let* ((remove (clingon:getopt cmd :remove))
            (move (clingon:getopt cmd :move)))
       (cond
-        (remove (remove-tag tags path)) ;; -r,--remove is higher priority
-        (move (remove-tag tags ".*")
+        (remove (format t "REMOVE: path=~A tags=~A~%" path tags)
+                (remove-tag tags path)) ;; -r,--remove is higher priority
+        (move (format t "MOVE: path=~A tags=~A~%" path tags)
+              (remove-tag tags ".*")
               (tag-fs-object path tags))
-        (t (tag-fs-object path tags))))))
+        (t (format t "TAG: path=~A tags=~A~%" path tags)
+           (tag-fs-object path tags))))))
 
 
 (defun cli-tagged-cmd-handler (cmd)
@@ -470,7 +481,7 @@ complete -F _easytags_auto_complete <SCRIPT-PATH>
 (defun cli-tag-cmd ()
   (clingon:make-command
    :name "tag"
-   :usage "file,directory tag1 [tag...]"
+   :usage "file/directory tag1 [tag...]"
    :examples '(("Tag a file:" . "tag some-file tag1 tag2 tag3"))
    :description "Tag file object"
    :handler #'cli-tag-cmd-handler

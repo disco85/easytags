@@ -25,6 +25,12 @@ tested it on Linux.
 # Tag a file or a directory:
 <TOOL> tag some_file tag1 tag2 tag3
 
+# Remove tags from files or directories matched by a regexp "some_file":
+<TOOL> tag some_file_regexp -r tag1 tag2 tag3
+
+# Move tags from ANY files or directories to a file of directory "some_file":
+<TOOL> tag some_file -m tag1 tag2 tag3
+
 # List all tagged objects:
 <TOOL> tagged
 

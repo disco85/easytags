@@ -106,7 +106,9 @@
 
 (defun select-tags-file (file &optional file-rexpr)
   "Selects tags-file inside tag directory"
-  (and (ppcre:scan "[/\]tags[/\]?$" file) (if file-rexpr (ppcre:scan file-rexpr file) t)))
+  (format t "SELECT-TAGS-FILE: file=~A  file-rexpr=~A~%" file file-rexpr)
+  (and (ppcre:scan "[/\]tags[/\]?$" file)
+       (if file-rexpr (ppcre:scan file-rexpr file) t)))
 
 
 (defun match-tags (tagfile tag-rexpr outfmt colorless)
@@ -248,8 +250,18 @@
 
     (tagfiles-iter fsm tag-rexpr outfmt colorless file-rexpr)))
 
+(defun match-file-lines (input-path rexpr)
+  "Returns T if any line inside a file INPUT-PATH matches REXPR regexp, else NIL"
+  (with-open-file (in input-path :direction :input)
+    (loop for line = (read-line in nil nil)
+          while line
+          thereis (ppcre:scan rexpr line))))
+
 
 (defun filter-file-lines (input-path output-path tag-rexprs)
+  "Removes lines from a file INPUT-FILE matching some of regexp in the list TAG-REXEPRS.
+These regexps can be even 'src!.*' but such lines are protected: if a line is '^src!.*'
+- it is kept as is"
   (with-open-file (in input-path :direction :input)
     (with-open-file (out output-path
                          :direction :output
@@ -264,16 +276,6 @@
                             tag-rexprs)))
                 (write-line line out))))))
 
-;; (defun temp-file-path ()
-;;   (let* ((tmpdir
-;;            #+sbcl sb-ext:*temporary-directory*
-;;            #+ccl ccl:*temporary-directory*
-;;            #+clisp ext:*tmpdir*
-;;            #-(or sbcl ccl clisp)
-;;            "/tmp/")  ;; fallback (Unix-like systems)
-;;          (name (format nil "easytags-filter-~A.tmp" (gensym))))
-;;     (merge-pathnames name tmpdir)))
-
 (defun temp-file-path ()
   (merge-pathnames
    (make-pathname :name (format nil "easytags-filter-~A" (gensym))
@@ -281,6 +283,7 @@
    (uiop:temporary-directory)))
 
 (defun filter-file-lines-in-place (path tag-rexprs)
+  "Like FILTER-FILE-LINES but does it in place (with the same file)"
   (when (probe-file path)
     (let ((temp-path (temp-file-path)))
       (unwind-protect
@@ -293,13 +296,12 @@
           (delete-file temp-path))))))
 
 (defun remove-tag (tag-rexprs &optional file-rexpr)
-  (flet ((match-tagfile (tagfile) (select-tags-file (namestring tagfile) file-rexpr)))
-    (loop :for tagdir :in (uiop:subdirectories *tags-dir*)
-          :do (loop :for tagfile :in (uiop:directory-files tagdir)
-                    :for matched-tagfile = (match-tagfile tagfile)
-                    :when matched-tagfile
-                      :do ;;(format t "!!!MATCHED: ~A~%" tagfile)
-                          (filter-file-lines-in-place tagfile tag-rexprs)))))
+  (loop :for tagdir :in (uiop:subdirectories *tags-dir*)
+        :do (loop :for tagfile :in (uiop:directory-files tagdir)
+                  :for matched-tagfile = (match-file-lines (namestring tagfile) file-rexpr)
+                  :when matched-tagfile
+                    :do ;;(format t "!!!MATCHED: ~A~%" tagfile)
+                        (filter-file-lines-in-place tagfile tag-rexprs))))
 
 
 ;;; CLI options
@@ -313,13 +315,10 @@
     (let* ((remove (clingon:getopt cmd :remove))
            (move (clingon:getopt cmd :move)))
       (cond
-        (remove (format t "REMOVE: path=~A tags=~A~%" path tags)
-                (remove-tag tags path)) ;; -r,--remove is higher priority
-        (move (format t "MOVE: path=~A tags=~A~%" path tags)
-              (remove-tag tags ".*")
+        (remove (remove-tag tags path)) ;; -r,--remove is higher priority
+        (move (remove-tag tags ".*")
               (tag-fs-object path tags))
-        (t (format t "TAG: path=~A tags=~A~%" path tags)
-           (tag-fs-object path tags))))))
+        (t (tag-fs-object path tags))))))
 
 
 (defun cli-tagged-cmd-handler (cmd)
@@ -535,7 +534,7 @@ complete -F _easytags_auto_complete <SCRIPT-PATH>
   (clingon:make-command
    :name "tags"
    :description "Tags over file objects"
-   :version "0.1.0"
+   :version "1.0.0"
    :authors '("John Doe <john.doe@example.org>")
    :license "BSD 2-Clause"
    :sub-commands (list (cli-tag-cmd) (cli-tagged-cmd) (cli-tags-cmd) (cli-autocomplete-cmd))

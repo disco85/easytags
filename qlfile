@@ -1,0 +1,6 @@
+local easytags /home/nothome/prj/shared/easytags/
+ql clingon
+ql fiveam
+ql cl-ppcre
+ql asdf-flv
+ql sly

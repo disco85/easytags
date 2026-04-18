@@ -534,7 +534,7 @@ complete -F _easytags_auto_complete <SCRIPT-PATH>
   (clingon:make-command
    :name "tags"
    :description "Tags over file objects"
-   :version "1.0.0"
+   :version "2.0.0"
    :authors '("John Doe <john.doe@example.org>")
    :license "BSD 2-Clause"
    :sub-commands (list (cli-tag-cmd) (cli-tagged-cmd) (cli-tags-cmd) (cli-autocomplete-cmd))
